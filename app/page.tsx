@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { supabase } from "@/lib/supabase";
-import type { Profile, Post, PrivateMedia } from "@/types";
+import { supabase } from "../lib/supabase";
+import type { Profile, Post, PrivateMedia } from "../types";
 
 export default function Home() {
   const [session, setSession] = useState<any>(null);
