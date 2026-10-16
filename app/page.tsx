@@ -548,16 +548,86 @@ export default function Home() {
 
   if (view === "terms") {
     return (
-      <div className="min-h-screen bg-black p-6">
+      <div className="min-h-screen bg-black p-5 pb-16">
         <div className="max-w-lg mx-auto">
-          <button onClick={() => setView("age")} className="text-pink-500 mb-6">← Back</button>
-          <h1 className="text-2xl font-bold mb-4">Terms & Privacy Policy</h1>
-          <div className="text-sm text-gray-300 space-y-3 leading-relaxed">
-            <p>1. You must be 18 years or older.</p>
-            <p>2. This is an adult content platform.</p>
-            <p>3. By uploading you give us license to display the content.</p>
-            <p>4. All digital purchases are final.</p>
-            <p>5. No underage or illegal content allowed.</p>
+          <button onClick={() => setView("age")} className="text-pink-500 mb-5 text-sm font-medium">← Back</button>
+          <h1 className="text-2xl font-bold mb-1">Terms of Service</h1>
+          <p className="text-xs text-gray-500 mb-6">Last updated: October 2026 • Lagos Girls</p>
+
+          <div className="text-[13px] text-gray-300 space-y-5 leading-relaxed">
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">1. Age Requirement</h2>
+              <p>You must be at least 18 years old to access or use Lagos Girls. By creating an account or using the platform, you confirm that you are 18 years of age or older. We reserve the right to terminate any account that violates this requirement.</p>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">2. Nature of the Platform</h2>
+              <p>Lagos Girls is an adult digital entertainment platform. All profiles, images, videos, stories, messages, and “services” displayed on the platform are provided for entertainment, fantasy, and digital content purposes only.</p>
+              <p className="mt-2">The individuals shown (including their names, photos, videos, and likenesses) are presented for adult entertainment. Users are purchasing access to digital content, private media, and fantasy interactions. The platform does not arrange, facilitate, or guarantee any real-world physical meetings, sexual services, or in-person encounters.</p>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">3. Likenesses and Content</h2>
+              <p>Content on Lagos Girls may include real photographs, videos, or digital representations and likenesses. By using the platform you acknowledge that:</p>
+              <ul className="list-disc pl-5 mt-2 space-y-1">
+                <li>You are paying for digital content and entertainment only.</li>
+                <li>Any “services” listed (video calls, private chat, custom content, parties, etc.) are digital or fantasy offerings unless explicitly stated otherwise by the individual content creator in a manner permitted by law.</li>
+                <li>The platform and its operators do not control or guarantee the real-world identity, availability, or actions of any person whose likeness appears on the site.</li>
+              </ul>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">4. Payments and Refunds</h2>
+              <p>All payments made on Lagos Girls — including Premium membership, unlocking private content, purchasing services, or any other digital purchase — are final and non-refundable, except where required by applicable law.</p>
+              <p className="mt-2">Once digital content is unlocked or a service is marked as delivered, no refund will be issued. Chargebacks or payment disputes initiated in bad faith may result in permanent account termination.</p>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">5. User Conduct</h2>
+              <p>You agree not to:</p>
+              <ul className="list-disc pl-5 mt-2 space-y-1">
+                <li>Upload, share, or request any content involving anyone under 18.</li>
+                <li>Harass, threaten, or blackmail other users or content creators.</li>
+                <li>Use the platform for illegal activities of any kind.</li>
+                <li>Attempt to scrape, copy, or redistribute content without permission.</li>
+                <li>Impersonate others or create fake accounts for malicious purposes.</li>
+              </ul>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">6. Content License</h2>
+              <p>By uploading any photo, video, or other content, you grant Lagos Girls a non-exclusive, worldwide, royalty-free license to display, distribute, and promote that content on the platform and related marketing channels.</p>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">7. Limitation of Liability</h2>
+              <p>To the maximum extent permitted by law, Lagos Girls, its operators, and affiliates shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits or data, arising from your use of the platform or any content or interactions on it.</p>
+              <p className="mt-2">The platform is provided “as is”. We do not guarantee uninterrupted access, the accuracy of any profile information, or the outcome of any interaction between users.</p>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">8. Account Termination</h2>
+              <p>We reserve the right to suspend or permanently terminate any account at our sole discretion, with or without notice, for violation of these Terms or for any other reason we deem appropriate.</p>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">9. Privacy</h2>
+              <p>We collect basic account information (username, optional email, profile data) and usage data necessary to operate the service. We do not sell your personal information to third parties. Payment information is handled by the payment providers you use.</p>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">10. Changes to These Terms</h2>
+              <p>We may update these Terms from time to time. Continued use of the platform after changes constitutes acceptance of the updated Terms.</p>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">11. Governing Law</h2>
+              <p>These Terms are governed by the laws of the Federal Republic of Nigeria. Any disputes shall be subject to the exclusive jurisdiction of the courts in Nigeria.</p>
+            </section>
+
+            <section className="pt-2 border-t border-zinc-800">
+              <p className="text-gray-400">By creating an account, logging in, or continuing to use Lagos Girls, you confirm that you have read, understood, and agree to be bound by these Terms of Service.</p>
+            </section>
           </div>
         </div>
       </div>
