@@ -7,8 +7,9 @@ import type { Profile, Post, PrivateMedia } from "../types";
 export default function Home() {
   const [session, setSession] = useState<any>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [view, setView] = useState<"age" | "auth" | "feed" | "profile" | "create" | "user" | "edit" | "terms" | "saved">("age");
+  const [view, setView] = useState<"age" | "auth" | "feed" | "profile" | "create" | "user" | "edit" | "terms" | "saved" | "story">("age");
   const [posts, setPosts] = useState<any[]>([]);
+  const [stories, setStories] = useState<any[]>([]);
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
   const [userPosts, setUserPosts] = useState<Post[]>([]);
   const [userPrivate, setUserPrivate] = useState<PrivateMedia[]>([]);
@@ -17,6 +18,8 @@ export default function Home() {
   const [message, setMessage] = useState("");
   const [commentText, setCommentText] = useState<{ [key: string]: string }>({});
   const [showComments, setShowComments] = useState<{ [key: string]: boolean }>({});
+  const [comments, setComments] = useState<{ [key: string]: any[] }>({});
+  const [activeStory, setActiveStory] = useState<any>(null);
 
   // Auth
   const [email, setEmail] = useState("");
@@ -25,17 +28,18 @@ export default function Home() {
   const [role, setRole] = useState<"GUY" | "GIRL">("GUY");
   const [agreed, setAgreed] = useState(false);
 
-  // Profile edit
+  // Profile
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
   const [location, setLocation] = useState("");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
 
-  // Create post
+  // Create
   const [caption, setCaption] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [isPrivate, setIsPrivate] = useState(false);
+  const [isStory, setIsStory] = useState(false);
   const [price, setPrice] = useState(2000);
   const [title, setTitle] = useState("");
 
@@ -66,7 +70,10 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (view === "feed") loadPosts();
+    if (view === "feed") {
+      loadPosts();
+      loadStories();
+    }
     if (view === "saved" && session) loadSavedPosts();
   }, [view]);
 
@@ -79,16 +86,23 @@ export default function Home() {
       setLocation(data.location || "");
       return data;
     }
-
     const newProfile = {
       id: user.id,
       username: user.user_metadata?.username || user.email?.split("@")[0] || "user" + Date.now(),
       display_name: user.user_metadata?.username || "New User",
       role: user.user_metadata?.role || "GUY",
     };
-
     const { data: created } = await supabase.from("profiles").insert(newProfile).select().single();
     if (created) setProfile(created);
+  }
+
+  async function loadStories() {
+    const { data } = await supabase
+      .from("stories")
+      .select(`*, profiles (id, username, display_name, avatar_url)`)
+      .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+      .order("created_at", { ascending: false });
+    if (data) setStories(data);
   }
 
   async function loadPosts() {
@@ -96,41 +110,28 @@ export default function Home() {
       .from("posts")
       .select(`*, profiles (id, username, display_name, avatar_url, role, location)`)
       .order("created_at", { ascending: false })
-      .limit(50);
+      .limit(40);
 
     if (data) {
-      // Get likes and saves count
       const postsWithStats = await Promise.all(
         data.map(async (post: any) => {
-          const { count: likesCount } = await supabase
-            .from("likes")
-            .select("*", { count: "exact", head: true })
-            .eq("post_id", post.id);
-
-          const { data: myLike } = await supabase
-            .from("likes")
-            .select("id")
-            .eq("post_id", post.id)
-            .eq("user_id", session?.user?.id)
-            .maybeSingle();
-
-          const { data: mySave } = await supabase
-            .from("saves")
-            .select("id")
-            .eq("post_id", post.id)
-            .eq("user_id", session?.user?.id)
-            .maybeSingle();
-
-          return {
-            ...post,
-            likes_count: likesCount || 0,
-            liked_by_me: !!myLike,
-            saved_by_me: !!mySave,
-          };
+          const { count: likesCount } = await supabase.from("likes").select("*", { count: "exact", head: true }).eq("post_id", post.id);
+          const { data: myLike } = await supabase.from("likes").select("id").eq("post_id", post.id).eq("user_id", session?.user?.id).maybeSingle();
+          const { data: mySave } = await supabase.from("saves").select("id").eq("post_id", post.id).eq("user_id", session?.user?.id).maybeSingle();
+          return { ...post, likes_count: likesCount || 0, liked_by_me: !!myLike, saved_by_me: !!mySave };
         })
       );
       setPosts(postsWithStats);
     }
+  }
+
+  async function loadComments(postId: string) {
+    const { data } = await supabase
+      .from("comments")
+      .select(`*, profiles (username, display_name, avatar_url)`)
+      .eq("post_id", postId)
+      .order("created_at", { ascending: true });
+    setComments((prev) => ({ ...prev, [postId]: data || [] }));
   }
 
   async function loadSavedPosts() {
@@ -140,7 +141,6 @@ export default function Home() {
       .select(`post_id, posts (*, profiles (username, display_name, avatar_url))`)
       .eq("user_id", session.user.id)
       .order("created_at", { ascending: false });
-
     if (data) setSavedPosts(data.map((s: any) => s.posts));
   }
 
@@ -148,19 +148,8 @@ export default function Home() {
     const { data: userData } = await supabase.from("profiles").select("*").eq("id", userId).single();
     if (!userData) return;
     setSelectedUser(userData);
-
-    const { data: postsData } = await supabase
-      .from("posts")
-      .select("*")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
-
-    const { data: privateData } = await supabase
-      .from("private_media")
-      .select("*")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
-
+    const { data: postsData } = await supabase.from("posts").select("*").eq("user_id", userId).order("created_at", { ascending: false });
+    const { data: privateData } = await supabase.from("private_media").select("*").eq("user_id", userId).order("created_at", { ascending: false });
     setUserPosts(postsData || []);
     setUserPrivate(privateData || []);
     setView("user");
@@ -170,7 +159,6 @@ export default function Home() {
     if (!session) return;
     const post = posts.find((p) => p.id === postId);
     if (!post) return;
-
     if (post.liked_by_me) {
       await supabase.from("likes").delete().eq("post_id", postId).eq("user_id", session.user.id);
     } else {
@@ -183,7 +171,6 @@ export default function Home() {
     if (!session) return;
     const post = posts.find((p) => p.id === postId);
     if (!post) return;
-
     if (post.saved_by_me) {
       await supabase.from("saves").delete().eq("post_id", postId).eq("user_id", session.user.id);
     } else {
@@ -200,19 +187,26 @@ export default function Home() {
       content: commentText[postId],
     });
     setCommentText({ ...commentText, [postId]: "" });
-    setMessage("Comment added");
-    setTimeout(() => setMessage(""), 2000);
-}
+    loadComments(postId);
+  }
+
+  async function openComments(postId: string) {
+    setShowComments({ ...showComments, [postId]: !showComments[postId] });
+    if (!comments[postId]) loadComments(postId);
+                              }
     // ========== AUTH ==========
   async function handleSignUp() {
     if (!agreed) return setMessage("You must confirm you are 18+");
-    if (!email || !password || !username) return setMessage("Please fill all fields");
+    if (!password || !username) return setMessage("Username and password are required");
+    
+    // Create a hidden email if user didn't type one
+    const finalEmail = email || `${username.toLowerCase()}@lagosgirls.app`;
 
     setLoading(true);
     setMessage("");
 
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: finalEmail,
       password,
       options: {
         data: { username: username.toLowerCase(), role },
@@ -240,7 +234,11 @@ export default function Home() {
   async function handleLogin() {
     setLoading(true);
     setMessage("");
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const finalEmail = email || `${username.toLowerCase()}@lagosgirls.app`;
+    const { error } = await supabase.auth.signInWithPassword({ 
+      email: finalEmail, 
+      password 
+    });
     if (error) setMessage(error.message);
     setLoading(false);
   }
@@ -250,7 +248,7 @@ export default function Home() {
     setView("auth");
   }
 
-  // ========== PROFILE UPDATE + AVATAR ==========
+  // ========== PROFILE + AVATAR ==========
   async function updateProfile() {
     if (!session) return;
     setLoading(true);
@@ -273,12 +271,7 @@ export default function Home() {
 
     const { error } = await supabase
       .from("profiles")
-      .update({
-        display_name: displayName,
-        bio,
-        location,
-        avatar_url,
-      })
+      .update({ display_name: displayName, bio, location, avatar_url })
       .eq("id", session.user.id);
 
     if (error) setMessage(error.message);
@@ -291,16 +284,12 @@ export default function Home() {
     setLoading(false);
   }
 
-  // ========== FILE HANDLING ==========
+  // ========== FILE UPLOAD ==========
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(e.target.files || []);
-    if (selected.length > 10) {
-      setMessage("Maximum 10 files at once");
-      return;
-    }
+    if (selected.length > 10) return setMessage("Maximum 10 files");
     setFiles(selected);
-    const urls = selected.map((file) => URL.createObjectURL(file));
-    setPreviews(urls);
+    setPreviews(selected.map((file) => URL.createObjectURL(file)));
   }
 
   async function uploadFile(file: File) {
@@ -313,7 +302,7 @@ export default function Home() {
   }
 
   async function handleCreatePost() {
-    if (!session || files.length === 0) return setMessage("Please select at least one photo or video");
+    if (!session || files.length === 0) return setMessage("Select at least one photo or video");
 
     setLoading(true);
     setMessage("");
@@ -323,7 +312,13 @@ export default function Home() {
         const mediaType = file.type.startsWith("video") ? "video" : "image";
         const mediaUrl = await uploadFile(file);
 
-        if (isPrivate) {
+        if (isStory) {
+          await supabase.from("stories").insert({
+            user_id: session.user.id,
+            media_url: mediaUrl,
+            media_type: mediaType,
+          });
+        } else if (isPrivate) {
           await supabase.from("private_media").insert({
             user_id: session.user.id,
             title: title || "Private Content",
@@ -341,43 +336,39 @@ export default function Home() {
         }
       }
 
-      setMessage(isPrivate ? "Private content uploaded!" : "Posted successfully!");
+      setMessage(isStory ? "Added to Story!" : isPrivate ? "Private content uploaded!" : "Posted!");
       setFiles([]);
       setPreviews([]);
       setCaption("");
       setTitle("");
       setIsPrivate(false);
+      setIsStory(false);
       if (fileRef.current) fileRef.current.value = "";
       setTimeout(() => {
         setView("feed");
         loadPosts();
-      }, 800);
+        loadStories();
+      }, 700);
     } catch (err: any) {
       setMessage(err.message || "Upload failed");
     }
     setLoading(false);
   }
 
-  // ========== UI START ==========
+  // ========== UI - AGE & AUTH ==========
   if (view === "age") {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center p-6">
         <div className="max-w-md w-full text-center">
           <h1 className="text-4xl font-bold text-pink-500 mb-2">Lagos Girls</h1>
           <p className="text-gray-400 mb-8">Premium adult experience for 18+</p>
-
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-left text-sm text-gray-300 mb-6 leading-relaxed">
-            This platform contains adult content. By entering you confirm you are at least 18 years old.
-            You also agree that any content you upload may be used according to our Terms.
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-left text-sm text-gray-300 mb-6">
+            This platform contains adult content. By entering you confirm you are 18+.
           </div>
-
           <button onClick={() => setView("auth")} className="w-full bg-pink-600 hover:bg-pink-700 text-white font-semibold py-4 rounded-xl text-lg">
             I am 18 or older — Enter
           </button>
-
-          <button onClick={() => setView("terms")} className="mt-4 text-sm text-gray-500 underline">
-            Terms & Privacy Policy
-          </button>
+          <button onClick={() => setView("terms")} className="mt-4 text-sm text-gray-500 underline">Terms & Privacy</button>
         </div>
       </div>
     );
@@ -388,14 +379,13 @@ export default function Home() {
       <div className="min-h-screen bg-black p-6">
         <div className="max-w-lg mx-auto">
           <button onClick={() => setView("age")} className="text-pink-500 mb-6">← Back</button>
-          <h1 className="text-2xl font-bold mb-4">Terms & Privacy Policy</h1>
-          <div className="text-sm text-gray-300 space-y-4 leading-relaxed">
-            <p>1. You must be 18 years or older to use this platform.</p>
-            <p>2. All content is adult in nature.</p>
-            <p>3. By uploading content you grant Lagos Girls a license to display it.</p>
-            <p>4. Digital content purchases are final and non-refundable.</p>
-            <p>5. We do not sell your personal data.</p>
-            <p>6. Illegal or underage content = permanent ban.</p>
+          <h1 className="text-2xl font-bold mb-4">Terms & Privacy</h1>
+          <div className="text-sm text-gray-300 space-y-3">
+            <p>1. You must be 18+.</p>
+            <p>2. Adult content only.</p>
+            <p>3. Uploaded content can be displayed on the platform.</p>
+            <p>4. All purchases are final.</p>
+            <p>5. No underage or illegal content.</p>
           </div>
         </div>
       </div>
@@ -407,14 +397,15 @@ export default function Home() {
       <div className="min-h-screen bg-black flex items-center justify-center p-6">
         <div className="max-w-md w-full">
           <h1 className="text-3xl font-bold text-pink-500 text-center mb-8">Lagos Girls</h1>
-
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
             <input type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 focus:outline-none focus:border-pink-500" />
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3" />
             <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 focus:outline-none focus:border-pink-500" />
-            <input type="email" placeholder="Email (only for login recovery)" value={email} onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 focus:outline-none focus:border-pink-500" />
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3" />
+            
+            {/* Email is optional / almost hidden */}
+            <input type="email" placeholder="Email (optional)" value={email} onChange={(e) => setEmail(e.target.value)}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-sm opacity-70" />
 
             <select value={role} onChange={(e) => setRole(e.target.value as any)}
               className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3">
@@ -424,24 +415,22 @@ export default function Home() {
 
             <label className="flex items-start gap-3 text-sm text-gray-300">
               <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-1" />
-              <span>I confirm I am 18+ and agree to the Terms & Privacy Policy</span>
+              <span>I am 18+ and agree to the Terms</span>
             </label>
 
             {message && <p className="text-center text-sm text-pink-400">{message}</p>}
 
-            <button onClick={handleSignUp} disabled={loading}
-              className="w-full bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white font-semibold py-3.5 rounded-xl">
+            <button onClick={handleSignUp} disabled={loading} className="w-full bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white font-semibold py-3.5 rounded-xl">
               {loading ? "Creating..." : "Create Account"}
             </button>
-            <button onClick={handleLogin} disabled={loading}
-              className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-semibold py-3.5 rounded-xl">
+            <button onClick={handleLogin} disabled={loading} className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-semibold py-3.5 rounded-xl">
               Login
             </button>
           </div>
         </div>
       </div>
     );
-      }
+  }
     // ========== MAIN APP ==========
   return (
     <div className="min-h-screen bg-black pb-24">
@@ -457,17 +446,78 @@ export default function Home() {
       </header>
 
       <main className="max-w-lg mx-auto">
-        {/* FEED */}
+
+        {/* ========== FEED ========== */}
         {view === "feed" && (
           <div>
+            {/* STORIES */}
+            <div className="flex gap-4 overflow-x-auto px-4 py-4 border-b border-zinc-900 scrollbar-hide">
+              {/* Add Story Button */}
+              <div className="flex flex-col items-center gap-1 min-w-[70px]" onClick={() => { setIsStory(true); setView("create"); }}>
+                <div className="w-16 h-16 rounded-full border-2 border-dashed border-pink-500 flex items-center justify-center text-2xl text-pink-500">
+                  +
+                </div>
+                <span className="text-xs text-gray-400">Your Story</span>
+              </div>
+
+              {stories.map((story) => (
+                <div key={story.id} className="flex flex-col items-center gap-1 min-w-[70px]" onClick={() => setActiveStory(story)}>
+                  <div className="w-16 h-16 rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600">
+                    <div className="w-full h-full rounded-full bg-black p-[2px] overflow-hidden">
+                      {story.profiles?.avatar_url ? (
+                        <img src={story.profiles.avatar_url} className="w-full h-full object-cover rounded-full" alt="" />
+                      ) : (
+                        <div className="w-full h-full rounded-full bg-zinc-800 flex items-center justify-center text-sm">
+                          {story.profiles?.username?.[0]?.toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <span className="text-xs text-gray-300 truncate w-16 text-center">{story.profiles?.username}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Active Story Viewer */}
+            {activeStory && (
+              <div className="fixed inset-0 z-50 bg-black flex flex-col">
+                <div className="flex items-center justify-between p-4">
+                  <div className="flex items-center gap-3" onClick={() => openUserProfile(activeStory.user_id)}>
+                    <div className="w-9 h-9 rounded-full bg-zinc-800 overflow-hidden">
+                      {activeStory.profiles?.avatar_url ? (
+                        <img src={activeStory.profiles.avatar_url} className="w-full h-full object-cover" alt="" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-sm">{activeStory.profiles?.username?.[0]?.toUpperCase()}</div>
+                      )}
+                    </div>
+                    <span className="font-medium">{activeStory.profiles?.username}</span>
+                  </div>
+                  <button onClick={() => setActiveStory(null)} className="text-2xl">×</button>
+                </div>
+                <div className="flex-1 flex items-center justify-center">
+                  {activeStory.media_type === "video" ? (
+                    <video src={activeStory.media_url} controls autoPlay className="max-h-full max-w-full" />
+                  ) : (
+                    <img src={activeStory.media_url} className="max-h-full max-w-full object-contain" alt="" />
+                  )}
+                </div>
+                <div className="p-4 text-center">
+                  <button onClick={() => openUserProfile(activeStory.user_id)} className="text-pink-500 font-medium">
+                    View Profile
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* POSTS */}
             {posts.length === 0 ? (
-              <p className="text-center text-gray-500 py-24">No posts yet. Be the first!</p>
+              <p className="text-center text-gray-500 py-20">No posts yet</p>
             ) : (
               posts.map((post) => (
                 <article key={post.id} className="border-b border-zinc-900 pb-5">
                   <div className="flex items-center justify-between px-4 py-3">
-                    <div className="flex items-center gap-3 cursor-pointer" onClick={() => openUserProfile(post.user_id)}>
-                      <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-sm font-bold overflow-hidden">
+                    <div className="flex items-center gap-3" onClick={() => openUserProfile(post.user_id)}>
+                      <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-sm font-bold">
                         {post.profiles?.avatar_url ? (
                           <img src={post.profiles.avatar_url} className="w-full h-full object-cover" alt="" />
                         ) : (
@@ -490,17 +540,14 @@ export default function Home() {
                     <img src={post.media_url} className="w-full aspect-[4/5] object-cover bg-zinc-900" alt="" />
                   )}
 
-                  {/* Action buttons */}
-                  <div className="flex items-center gap-5 px-4 pt-3">
-                    <button onClick={() => toggleLike(post.id)} className="flex items-center gap-1.5">
-                      <span className="text-xl">{post.liked_by_me ? "❤️" : "🤍"}</span>
+                  <div className="flex items-center gap-6 px-4 pt-3">
+                    <button onClick={() => toggleLike(post.id)} className="flex items-center gap-1">
+                      <span className="text-2xl">{post.liked_by_me ? "❤️" : "🤍"}</span>
                       <span className="text-sm">{post.likes_count || 0}</span>
                     </button>
-                    <button onClick={() => setShowComments({ ...showComments, [post.id]: !showComments[post.id] })}>
-                      💬
-                    </button>
-                    <button onClick={() => toggleSave(post.id)}>
-                      <span className="text-xl">{post.saved_by_me ? "🔖" : "📑"}</span>
+                    <button onClick={() => openComments(post.id)} className="text-2xl">💬</button>
+                    <button onClick={() => toggleSave(post.id)} className="text-2xl">
+                      {post.saved_by_me ? "💾" : "📥"}
                     </button>
                   </div>
 
@@ -511,10 +558,16 @@ export default function Home() {
                     </p>
                   )}
 
-                  {/* Comments */}
+                  {/* COMMENTS SECTION */}
                   {showComments[post.id] && (
-                    <div className="px-4 mt-3">
-                      <div className="flex gap-2">
+                    <div className="px-4 mt-3 space-y-3">
+                      {(comments[post.id] || []).map((c: any) => (
+                        <div key={c.id} className="text-sm">
+                          <span className="font-semibold mr-2">{c.profiles?.username}</span>
+                          {c.content}
+                        </div>
+                      ))}
+                      <div className="flex gap-2 mt-2">
                         <input
                           type="text"
                           placeholder="Add a comment..."
@@ -522,7 +575,7 @@ export default function Home() {
                           onChange={(e) => setCommentText({ ...commentText, [post.id]: e.target.value })}
                           className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-2 text-sm"
                         />
-                        <button onClick={() => postComment(post.id)} className="text-pink-500 text-sm font-medium">
+                        <button onClick={() => postComment(post.id)} className="text-pink-500 text-sm font-medium px-2">
                           Post
                         </button>
                       </div>
@@ -534,23 +587,25 @@ export default function Home() {
           </div>
         )}
 
-        {/* CREATE POST */}
+        {/* ========== CREATE ========== */}
         {view === "create" && (
           <div className="p-4 space-y-5">
-            <h2 className="text-xl font-bold">Create Post</h2>
+            <h2 className="text-xl font-bold">{isStory ? "Add to Story" : "Create Post"}</h2>
 
-            <div className="flex gap-3">
-              <button onClick={() => setIsPrivate(false)}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-medium ${!isPrivate ? "bg-pink-600" : "bg-zinc-800"}`}>
-                Public
-              </button>
-              <button onClick={() => setIsPrivate(true)}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-medium ${isPrivate ? "bg-pink-600" : "bg-zinc-800"}`}>
-                Private (Paid)
-              </button>
-            </div>
+            {!isStory && (
+              <div className="flex gap-3">
+                <button onClick={() => { setIsPrivate(false); setIsStory(false); }}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium ${!isPrivate && !isStory ? "bg-pink-600" : "bg-zinc-800"}`}>
+                  Public
+                </button>
+                <button onClick={() => { setIsPrivate(true); setIsStory(false); }}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium ${isPrivate ? "bg-pink-600" : "bg-zinc-800"}`}>
+                  Private ₦
+                </button>
+              </div>
+            )}
 
-            {isPrivate && (
+            {isPrivate && !isStory && (
               <>
                 <input type="text" placeholder="Title (e.g. My Nudes)" value={title} onChange={(e) => setTitle(e.target.value)}
                   className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3" />
@@ -562,7 +617,7 @@ export default function Home() {
               </>
             )}
 
-            {!isPrivate && (
+            {!isPrivate && !isStory && (
               <textarea placeholder="Write a caption..." value={caption} onChange={(e) => setCaption(e.target.value)}
                 rows={3} className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 resize-none" />
             )}
@@ -582,9 +637,8 @@ export default function Home() {
             )}
 
             <div onClick={() => fileRef.current?.click()}
-              className="border-2 border-dashed border-zinc-700 rounded-2xl p-8 text-center cursor-pointer hover:border-pink-500">
-              <p className="text-gray-400">{files.length > 0 ? `${files.length} file(s) selected` : "Tap to select Photos or Videos"}</p>
-              <p className="text-xs text-gray-600 mt-1">Up to 10 files</p>
+              className="border-2 border-dashed border-zinc-700 rounded-2xl p-8 text-center cursor-pointer">
+              <p className="text-gray-400">{files.length > 0 ? `${files.length} selected` : "Tap to select Photo / Video"}</p>
               <input ref={fileRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleFileSelect} />
             </div>
 
@@ -592,21 +646,23 @@ export default function Home() {
 
             <button onClick={handleCreatePost} disabled={loading || files.length === 0}
               className="w-full bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white font-semibold py-4 rounded-xl">
-              {loading ? "Uploading..." : isPrivate ? `Upload Private • ₦${price.toLocaleString()}` : "Share Post"}
+              {loading ? "Uploading..." : isStory ? "Share to Story" : isPrivate ? `Upload Private • ₦${price.toLocaleString()}` : "Share Post"}
             </button>
+
+            {isStory && (
+              <button onClick={() => { setIsStory(false); setView("create"); }} className="w-full text-sm text-gray-400">
+                Cancel Story
+              </button>
+            )}
           </div>
         )}
 
-        {/* MY PROFILE */}
+        {/* ========== MY PROFILE ========== */}
         {view === "profile" && profile && (
           <div className="p-4">
             <div className="flex items-center gap-4 mb-6">
-              <div className="w-20 h-20 rounded-full bg-zinc-800 flex items-center justify-center text-2xl font-bold overflow-hidden">
-                {profile.avatar_url ? (
-                  <img src={profile.avatar_url} className="w-full h-full object-cover" alt="" />
-                ) : (
-                  profile.username[0].toUpperCase()
-                )}
+              <div className="w-20 h-20 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-2xl font-bold">
+                {profile.avatar_url ? <img src={profile.avatar_url} className="w-full h-full object-cover" alt="" /> : profile.username[0].toUpperCase()}
               </div>
               <div>
                 <h2 className="text-xl font-bold">{profile.display_name || profile.username}</h2>
@@ -618,13 +674,9 @@ export default function Home() {
             {profile.bio && <p className="text-gray-300 mb-2">{profile.bio}</p>}
             {profile.location && <p className="text-sm text-gray-500 mb-6">📍 {profile.location}</p>}
 
-            <div className="flex gap-3 mb-6">
-              <button onClick={() => setView("edit")} className="flex-1 bg-zinc-900 border border-zinc-700 py-2.5 rounded-xl text-sm">
-                Edit Profile
-              </button>
-              <button onClick={() => setView("saved")} className="flex-1 bg-zinc-900 border border-zinc-700 py-2.5 rounded-xl text-sm">
-                Saved
-              </button>
+            <div className="flex gap-3 mb-4">
+              <button onClick={() => setView("edit")} className="flex-1 bg-zinc-900 border border-zinc-700 py-2.5 rounded-xl text-sm">Edit Profile</button>
+              <button onClick={() => setView("saved")} className="flex-1 bg-zinc-900 border border-zinc-700 py-2.5 rounded-xl text-sm">Saved</button>
             </div>
 
             <button onClick={handleLogout} className="w-full bg-zinc-900 border border-zinc-700 py-3 rounded-xl text-red-400">
@@ -633,24 +685,20 @@ export default function Home() {
           </div>
         )}
 
-        {/* SAVED POSTS */}
+        {/* ========== SAVED ========== */}
         {view === "saved" && (
           <div className="p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">Saved Posts</h2>
-              <button onClick={() => setView("profile")} className="text-sm text-pink-500">Back</button>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold">Saved</h2>
+              <button onClick={() => setView("profile")} className="text-pink-500 text-sm">Back</button>
             </div>
             {savedPosts.length === 0 ? (
-              <p className="text-center text-gray-500 py-16">No saved posts yet</p>
+              <p className="text-center text-gray-500 py-16">No saved posts</p>
             ) : (
               <div className="grid grid-cols-3 gap-1">
                 {savedPosts.map((p: any) => (
                   <div key={p.id} className="aspect-square bg-zinc-900 overflow-hidden">
-                    {p.media_type === "video" ? (
-                      <video src={p.media_url} className="w-full h-full object-cover" />
-                    ) : (
-                      <img src={p.media_url} className="w-full h-full object-cover" alt="" />
-                    )}
+                    {p.media_type === "video" ? <video src={p.media_url} className="w-full h-full object-cover" /> : <img src={p.media_url} className="w-full h-full object-cover" alt="" />}
                   </div>
                 ))}
               </div>
@@ -658,11 +706,10 @@ export default function Home() {
           </div>
         )}
 
-        {/* EDIT PROFILE */}
+        {/* ========== EDIT PROFILE ========== */}
         {view === "edit" && (
           <div className="p-4 space-y-4">
             <h2 className="text-xl font-bold">Edit Profile</h2>
-
             <div className="flex flex-col items-center gap-3">
               <div className="w-24 h-24 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-3xl">
                 {avatarFile ? (
@@ -673,40 +720,25 @@ export default function Home() {
                   profile?.username[0].toUpperCase()
                 )}
               </div>
-              <button onClick={() => avatarRef.current?.click()} className="text-pink-500 text-sm font-medium">
-                Change Profile Picture
-              </button>
+              <button onClick={() => avatarRef.current?.click()} className="text-pink-500 text-sm">Change Photo</button>
               <input ref={avatarRef} type="file" accept="image/*" className="hidden" onChange={(e) => setAvatarFile(e.target.files?.[0] || null)} />
             </div>
-
-            <input type="text" placeholder="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)}
-              className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3" />
-            <textarea placeholder="Bio" value={bio} onChange={(e) => setBio(e.target.value)} rows={3}
-              className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 resize-none" />
-            <input type="text" placeholder="Location (e.g. Lekki, Lagos)" value={location} onChange={(e) => setLocation(e.target.value)}
-              className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3" />
-
+            <input type="text" placeholder="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3" />
+            <textarea placeholder="Bio" value={bio} onChange={(e) => setBio(e.target.value)} rows={3} className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 resize-none" />
+            <input type="text" placeholder="Location" value={location} onChange={(e) => setLocation(e.target.value)} className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3" />
             {message && <p className="text-sm text-pink-400">{message}</p>}
-
-            <button onClick={updateProfile} disabled={loading} className="w-full bg-pink-600 py-3.5 rounded-xl font-semibold">
-              {loading ? "Saving..." : "Save Changes"}
-            </button>
+            <button onClick={updateProfile} disabled={loading} className="w-full bg-pink-600 py-3.5 rounded-xl font-semibold">{loading ? "Saving..." : "Save"}</button>
             <button onClick={() => setView("profile")} className="w-full bg-zinc-900 py-3 rounded-xl">Cancel</button>
           </div>
         )}
 
-        {/* OTHER USER PROFILE */}
+        {/* ========== OTHER USER PROFILE ========== */}
         {view === "user" && selectedUser && (
           <div className="p-4">
-            <button onClick={() => setView("feed")} className="text-sm text-gray-400 mb-4">← Back to Feed</button>
-
+            <button onClick={() => setView("feed")} className="text-sm text-gray-400 mb-4">← Back</button>
             <div className="flex items-center gap-4 mb-6">
-              <div className="w-20 h-20 rounded-full bg-zinc-800 flex items-center justify-center text-2xl font-bold overflow-hidden">
-                {selectedUser.avatar_url ? (
-                  <img src={selectedUser.avatar_url} className="w-full h-full object-cover" alt="" />
-                ) : (
-                  selectedUser.username[0].toUpperCase()
-                )}
+              <div className="w-20 h-20 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-2xl font-bold">
+                {selectedUser.avatar_url ? <img src={selectedUser.avatar_url} className="w-full h-full object-cover" alt="" /> : selectedUser.username[0].toUpperCase()}
               </div>
               <div>
                 <h2 className="text-xl font-bold">{selectedUser.display_name || selectedUser.username}</h2>
@@ -714,7 +746,6 @@ export default function Home() {
                 <p className="text-xs text-pink-500">{selectedUser.role}</p>
               </div>
             </div>
-
             {selectedUser.bio && <p className="text-gray-300 mb-2">{selectedUser.bio}</p>}
             {selectedUser.location && <p className="text-sm text-gray-500 mb-4">📍 {selectedUser.location}</p>}
 
@@ -722,11 +753,7 @@ export default function Home() {
             <div className="grid grid-cols-3 gap-1 mb-8">
               {userPosts.map((p) => (
                 <div key={p.id} className="aspect-square bg-zinc-900 overflow-hidden">
-                  {p.media_type === "video" ? (
-                    <video src={p.media_url} className="w-full h-full object-cover" />
-                  ) : (
-                    <img src={p.media_url} className="w-full h-full object-cover" alt="" />
-                  )}
+                  {p.media_type === "video" ? <video src={p.media_url} className="w-full h-full object-cover" /> : <img src={p.media_url} className="w-full h-full object-cover" alt="" />}
                 </div>
               ))}
             </div>
@@ -741,6 +768,7 @@ export default function Home() {
                       <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center">
                         <p className="font-medium text-sm mb-1">{m.title}</p>
                         <p className="text-pink-400 font-bold">₦{m.price.toLocaleString()}</p>
+                        <p className="text-xs text-gray-300 mt-1">Unlock to view</p>
                       </div>
                     </div>
                   ))}
@@ -752,4 +780,4 @@ export default function Home() {
       </main>
     </div>
   );
-            }
+                                }
