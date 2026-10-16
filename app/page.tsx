@@ -93,22 +93,80 @@ export default function Home() {
   }, [view]);
 
   async function ensureProfile(user: any) {
-    const { data } = await supabase.from("profiles").select("*").eq("id", user.id).single();
-    if (data) {
-      setProfile(data);
-      setDisplayName(data.display_name || "");
-      setBio(data.bio || "");
-      setLocation(data.location || "");
-      return data;
+    if (!user?.id) return;
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (data) {
+        setProfile(data);
+        setDisplayName(data.display_name || "");
+        setBio(data.bio || "");
+        setLocation(data.location || "");
+        return data;
+      }
+
+      // Profile missing — create one
+      const username =
+        user.user_metadata?.username ||
+        user.email?.split("@")[0] ||
+        "user" + Date.now().toString().slice(-6);
+
+      const newProfile = {
+        id: user.id,
+        username,
+        display_name: user.user_metadata?.username || username,
+        role: user.user_metadata?.role || "GUY",
+        is_premium: false,
+      };
+
+      const { data: created, error: insertError } = await supabase
+        .from("profiles")
+        .insert(newProfile)
+        .select()
+        .maybeSingle();
+
+      if (created) {
+        setProfile(created);
+        setDisplayName(created.display_name || "");
+        setBio(created.bio || "");
+        setLocation(created.location || "");
+        return created;
+      }
+
+      // Last resort: set a minimal local profile so UI is never blank
+      if (error || insertError) {
+        console.error("ensureProfile error:", error || insertError);
+      }
+      const fallback = {
+        id: user.id,
+        username,
+        display_name: username,
+        bio: null,
+        avatar_url: null,
+        role: (user.user_metadata?.role || "GUY") as "GUY" | "GIRL",
+        location: null,
+        is_premium: false,
+      };
+      setProfile(fallback as any);
+      return fallback;
+    } catch (e) {
+      console.error("ensureProfile exception:", e);
+      const fallback = {
+        id: user.id,
+        username: user.user_metadata?.username || "user",
+        display_name: user.user_metadata?.username || "User",
+        bio: null,
+        avatar_url: null,
+        role: "GUY" as const,
+        location: null,
+        is_premium: false,
+      };
+      setProfile(fallback as any);
     }
-    const newProfile = {
-      id: user.id,
-      username: user.user_metadata?.username || user.email?.split("@")[0] || "user" + Date.now(),
-      display_name: user.user_metadata?.username || "New User",
-      role: user.user_metadata?.role || "GUY",
-    };
-    const { data: created } = await supabase.from("profiles").insert(newProfile).select().single();
-    if (created) setProfile(created);
   }
 
   async function loadStories() {
@@ -785,7 +843,10 @@ export default function Home() {
               Messages
             </button>
             <button
-              onClick={() => setView("profile")}
+              onClick={() => {
+                setView("profile");
+                if (session) ensureProfile(session.user);
+              }}
               className={`transition-colors ${view === "profile" || view === "saved" ? "text-pink-500" : "text-gray-400 hover:text-gray-200"}`}
             >
               Me
