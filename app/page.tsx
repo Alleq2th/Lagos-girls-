@@ -2,17 +2,19 @@
 
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { smartFeedSort, shuffleArray } from "../lib/algorithm";
 import type { Profile, Post, PrivateMedia } from "../types";
 
 export default function Home() {
   const [session, setSession] = useState<any>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [view, setView] = useState<"age" | "auth" | "feed" | "profile" | "create" | "user" | "edit" | "terms" | "saved" | "story">("age");
+  const [view, setView] = useState<"age" | "auth" | "feed" | "profile" | "create" | "user" | "edit" | "terms" | "saved" | "messages" | "chat">("age");
   const [posts, setPosts] = useState<any[]>([]);
   const [stories, setStories] = useState<any[]>([]);
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
   const [userPosts, setUserPosts] = useState<Post[]>([]);
   const [userPrivate, setUserPrivate] = useState<PrivateMedia[]>([]);
+  const [myPosts, setMyPosts] = useState<any[]>([]);
   const [savedPosts, setSavedPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -20,6 +22,12 @@ export default function Home() {
   const [showComments, setShowComments] = useState<{ [key: string]: boolean }>({});
   const [comments, setComments] = useState<{ [key: string]: any[] }>({});
   const [activeStory, setActiveStory] = useState<any>(null);
+
+  // Messaging
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [currentChat, setCurrentChat] = useState<any>(null);
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [newMessage, setNewMessage] = useState("");
 
   // Auth
   const [email, setEmail] = useState("");
@@ -75,6 +83,8 @@ export default function Home() {
       loadStories();
     }
     if (view === "saved" && session) loadSavedPosts();
+    if (view === "profile" && session) loadMyPosts();
+    if (view === "messages" && session) loadConversations();
   }, [view]);
 
   async function ensureProfile(user: any) {
@@ -102,7 +112,7 @@ export default function Home() {
       .select(`*, profiles (id, username, display_name, avatar_url)`)
       .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
       .order("created_at", { ascending: false });
-    if (data) setStories(data);
+    if (data) setStories(shuffleArray(data));
   }
 
   async function loadPosts() {
@@ -110,7 +120,7 @@ export default function Home() {
       .from("posts")
       .select(`*, profiles (id, username, display_name, avatar_url, role, location)`)
       .order("created_at", { ascending: false })
-      .limit(40);
+      .limit(50);
 
     if (data) {
       const postsWithStats = await Promise.all(
@@ -121,8 +131,18 @@ export default function Home() {
           return { ...post, likes_count: likesCount || 0, liked_by_me: !!myLike, saved_by_me: !!mySave };
         })
       );
-      setPosts(postsWithStats);
+      setPosts(smartFeedSort(postsWithStats));
     }
+  }
+
+  async function loadMyPosts() {
+    if (!session) return;
+    const { data } = await supabase
+      .from("posts")
+      .select("*")
+      .eq("user_id", session.user.id)
+      .order("created_at", { ascending: false });
+    setMyPosts(data || []);
   }
 
   async function loadComments(postId: string) {
@@ -144,12 +164,23 @@ export default function Home() {
     if (data) setSavedPosts(data.map((s: any) => s.posts));
   }
 
-  async function openUserProfile(userId: string) {
+  async function loadConversations() {
+    if (!session || !profile) return;
+    const { data } = await supabase
+      .from("conversations")
+      .select(`*, guy:profiles!guy_id(username, display_name, avatar_url), girl:profiles!girl_id(username, display_name, avatar_url)`)
+      .or(`guy_id.eq.${session.user.id},girl_id.eq.${session.user.id}`)
+      .order("updated_at", { ascending: false });
+    setConversations(data || []);
+    }
+    async function openUserProfile(userId: string) {
     const { data: userData } = await supabase.from("profiles").select("*").eq("id", userId).single();
     if (!userData) return;
     setSelectedUser(userData);
+
     const { data: postsData } = await supabase.from("posts").select("*").eq("user_id", userId).order("created_at", { ascending: false });
     const { data: privateData } = await supabase.from("private_media").select("*").eq("user_id", userId).order("created_at", { ascending: false });
+
     setUserPosts(postsData || []);
     setUserPrivate(privateData || []);
     setView("user");
@@ -193,14 +224,109 @@ export default function Home() {
   async function openComments(postId: string) {
     setShowComments({ ...showComments, [postId]: !showComments[postId] });
     if (!comments[postId]) loadComments(postId);
-                              }
-    // ========== AUTH ==========
+  }
+
+  async function deleteMyPost(postId: string) {
+    if (!confirm("Delete this post?")) return;
+    await supabase.from("posts").delete().eq("id", postId);
+    loadMyPosts();
+    setMessage("Post deleted");
+  }
+
+  // ========== PREMIUM ==========
+  async function becomePremium() {
+    if (!session || !profile) return;
+    if (profile.is_premium) return setMessage("You are already Premium");
+
+    const confirmPay = confirm("Become Premium for ₦5,000?\n\nYou will be able to message girls.");
+    if (!confirmPay) return;
+
+    // For now we just activate it (later we connect real Paystack)
+    const { error } = await supabase
+      .from("profiles")
+      .update({ is_premium: true })
+      .eq("id", session.user.id);
+
+    if (error) {
+      setMessage(error.message);
+    } else {
+      setMessage("🎉 You are now Premium!");
+      ensureProfile(session.user);
+    }
+  }
+
+  // ========== MESSAGING ==========
+  async function startChat(girlId: string) {
+    if (!session || !profile) return;
+
+    if (!profile.is_premium) {
+      return setMessage("Only Premium users can message. Become Premium for ₦5,000");
+    }
+
+    // Check if conversation already exists
+    let { data: existing } = await supabase
+      .from("conversations")
+      .select("*")
+      .eq("guy_id", session.user.id)
+      .eq("girl_id", girlId)
+      .maybeSingle();
+
+    if (!existing) {
+      const { data: newConv, error } = await supabase
+        .from("conversations")
+        .insert({
+          guy_id: session.user.id,
+          girl_id: girlId,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        setMessage(error.message);
+        return;
+      }
+      existing = newConv;
+    }
+
+    setCurrentChat(existing);
+    loadChatMessages(existing.id);
+    setView("chat");
+  }
+
+  async function loadChatMessages(conversationId: string) {
+    const { data } = await supabase
+      .from("messages")
+      .select(`*, sender:profiles(username, display_name, avatar_url)`)
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: true });
+    setChatMessages(data || []);
+  }
+
+  async function sendMessage() {
+    if (!newMessage.trim() || !currentChat || !session) return;
+
+    await supabase.from("messages").insert({
+      conversation_id: currentChat.id,
+      sender_id: session.user.id,
+      content: newMessage.trim(),
+    });
+
+    // Update conversation timestamp
+    await supabase
+      .from("conversations")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", currentChat.id);
+
+    setNewMessage("");
+    loadChatMessages(currentChat.id);
+  }
+
+  // ========== AUTH ==========
   async function handleSignUp() {
     if (!agreed) return setMessage("You must confirm you are 18+");
-    if (!password || !username) return setMessage("Username and password are required");
-    
-    // Create a hidden email if user didn't type one
-    const finalEmail = email || `${username.toLowerCase()}@lagosgirls.app`;
+    if (!password || !username) return setMessage("Username and password required");
+
+    const finalEmail = email || `${username.toLowerCase().replace(/[^a-z0-9]/g, "")}${Date.now()}@gmail.com`;
 
     setLoading(true);
     setMessage("");
@@ -226,7 +352,7 @@ export default function Home() {
         display_name: username,
         role,
       });
-      setMessage("Account created successfully!");
+      setMessage("Account created!");
     }
     setLoading(false);
   }
@@ -234,11 +360,8 @@ export default function Home() {
   async function handleLogin() {
     setLoading(true);
     setMessage("");
-    const finalEmail = email || `${username.toLowerCase()}@lagosgirls.app`;
-    const { error } = await supabase.auth.signInWithPassword({ 
-      email: finalEmail, 
-      password 
-    });
+    const finalEmail = email || `${username.toLowerCase().replace(/[^a-z0-9]/g, "")}@gmail.com`;
+    const { error } = await supabase.auth.signInWithPassword({ email: finalEmail, password });
     if (error) setMessage(error.message);
     setLoading(false);
   }
@@ -247,8 +370,7 @@ export default function Home() {
     await supabase.auth.signOut();
     setView("auth");
   }
-
-  // ========== PROFILE + AVATAR ==========
+    // ========== PROFILE UPDATE ==========
   async function updateProfile() {
     if (!session) return;
     setLoading(true);
@@ -259,7 +381,9 @@ export default function Home() {
     if (avatarFile) {
       const ext = avatarFile.name.split(".").pop();
       const fileName = `avatar-${session.user.id}-${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage.from("avatars").upload(fileName, avatarFile, { upsert: true });
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(fileName, avatarFile, { upsert: true });
       if (uploadError) {
         setMessage(uploadError.message);
         setLoading(false);
@@ -271,7 +395,12 @@ export default function Home() {
 
     const { error } = await supabase
       .from("profiles")
-      .update({ display_name: displayName, bio, location, avatar_url })
+      .update({
+        display_name: displayName,
+        bio,
+        location,
+        avatar_url,
+      })
       .eq("id", session.user.id);
 
     if (error) setMessage(error.message);
@@ -284,7 +413,7 @@ export default function Home() {
     setLoading(false);
   }
 
-  // ========== FILE UPLOAD ==========
+  // ========== FILE HANDLING ==========
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(e.target.files || []);
     if (selected.length > 10) return setMessage("Maximum 10 files");
@@ -302,7 +431,7 @@ export default function Home() {
   }
 
   async function handleCreatePost() {
-    if (!session || files.length === 0) return setMessage("Select at least one photo or video");
+    if (!session || files.length === 0) return setMessage("Select at least one file");
 
     setLoading(true);
     setMessage("");
@@ -355,7 +484,7 @@ export default function Home() {
     setLoading(false);
   }
 
-  // ========== UI - AGE & AUTH ==========
+  // ========== UI - AGE GATE ==========
   if (view === "age") {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center p-6">
@@ -363,12 +492,14 @@ export default function Home() {
           <h1 className="text-4xl font-bold text-pink-500 mb-2">Lagos Girls</h1>
           <p className="text-gray-400 mb-8">Premium adult experience for 18+</p>
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-left text-sm text-gray-300 mb-6">
-            This platform contains adult content. By entering you confirm you are 18+.
+            This platform contains adult content. By entering you confirm you are at least 18 years old.
           </div>
           <button onClick={() => setView("auth")} className="w-full bg-pink-600 hover:bg-pink-700 text-white font-semibold py-4 rounded-xl text-lg">
             I am 18 or older — Enter
           </button>
-          <button onClick={() => setView("terms")} className="mt-4 text-sm text-gray-500 underline">Terms & Privacy</button>
+          <button onClick={() => setView("terms")} className="mt-4 text-sm text-gray-500 underline">
+            Terms & Privacy Policy
+          </button>
         </div>
       </div>
     );
@@ -379,43 +510,59 @@ export default function Home() {
       <div className="min-h-screen bg-black p-6">
         <div className="max-w-lg mx-auto">
           <button onClick={() => setView("age")} className="text-pink-500 mb-6">← Back</button>
-          <h1 className="text-2xl font-bold mb-4">Terms & Privacy</h1>
-          <div className="text-sm text-gray-300 space-y-3">
-            <p>1. You must be 18+.</p>
-            <p>2. Adult content only.</p>
-            <p>3. Uploaded content can be displayed on the platform.</p>
-            <p>4. All purchases are final.</p>
-            <p>5. No underage or illegal content.</p>
+          <h1 className="text-2xl font-bold mb-4">Terms & Privacy Policy</h1>
+          <div className="text-sm text-gray-300 space-y-3 leading-relaxed">
+            <p>1. You must be 18 years or older.</p>
+            <p>2. This is an adult content platform.</p>
+            <p>3. By uploading you give us license to display the content.</p>
+            <p>4. All digital purchases are final.</p>
+            <p>5. No underage or illegal content allowed.</p>
           </div>
         </div>
       </div>
     );
   }
 
+  // ========== AUTH SCREEN ==========
   if (view === "auth" || !session) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center p-6">
         <div className="max-w-md w-full">
           <h1 className="text-3xl font-bold text-pink-500 text-center mb-8">Lagos Girls</h1>
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
-            <input type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3" />
-            <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3" />
-            
-            {/* Email is optional / almost hidden */}
-            <input type="email" placeholder="Email (optional)" value={email} onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-sm opacity-70" />
-
-            <select value={role} onChange={(e) => setRole(e.target.value as any)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3">
+            <input
+              type="text"
+              placeholder="Username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3"
+            />
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3"
+            />
+            <input
+              type="email"
+              placeholder="Email (optional)"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-sm opacity-80"
+            />
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as any)}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3"
+            >
               <option value="GUY">I am a Guy</option>
               <option value="GIRL">I am a Girl</option>
             </select>
 
             <label className="flex items-start gap-3 text-sm text-gray-300">
               <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-1" />
-              <span>I am 18+ and agree to the Terms</span>
+              <span>I confirm I am 18+ and agree to the Terms</span>
             </label>
 
             {message && <p className="text-center text-sm text-pink-400">{message}</p>}
@@ -434,32 +581,29 @@ export default function Home() {
     // ========== MAIN APP ==========
   return (
     <div className="min-h-screen bg-black pb-24">
+      {/* HEADER */}
       <header className="sticky top-0 z-50 bg-black/90 backdrop-blur border-b border-zinc-800">
         <div className="max-w-lg mx-auto px-4 h-14 flex items-center justify-between">
           <h1 className="text-xl font-bold text-pink-500">Lagos Girls</h1>
           <div className="flex gap-5 text-sm">
             <button onClick={() => setView("feed")} className={view === "feed" ? "text-pink-500" : "text-gray-400"}>Feed</button>
             <button onClick={() => setView("create")} className={view === "create" ? "text-pink-500" : "text-gray-400"}>Post</button>
+            <button onClick={() => setView("messages")} className={view === "messages" || view === "chat" ? "text-pink-500" : "text-gray-400"}>Messages</button>
             <button onClick={() => setView("profile")} className={view === "profile" || view === "saved" ? "text-pink-500" : "text-gray-400"}>Me</button>
           </div>
         </div>
       </header>
 
       <main className="max-w-lg mx-auto">
-
         {/* ========== FEED ========== */}
         {view === "feed" && (
           <div>
-            {/* STORIES */}
-            <div className="flex gap-4 overflow-x-auto px-4 py-4 border-b border-zinc-900 scrollbar-hide">
-              {/* Add Story Button */}
+            {/* Stories */}
+            <div className="flex gap-4 overflow-x-auto px-4 py-4 border-b border-zinc-900">
               <div className="flex flex-col items-center gap-1 min-w-[70px]" onClick={() => { setIsStory(true); setView("create"); }}>
-                <div className="w-16 h-16 rounded-full border-2 border-dashed border-pink-500 flex items-center justify-center text-2xl text-pink-500">
-                  +
-                </div>
+                <div className="w-16 h-16 rounded-full border-2 border-dashed border-pink-500 flex items-center justify-center text-2xl text-pink-500">+</div>
                 <span className="text-xs text-gray-400">Your Story</span>
               </div>
-
               {stories.map((story) => (
                 <div key={story.id} className="flex flex-col items-center gap-1 min-w-[70px]" onClick={() => setActiveStory(story)}>
                   <div className="w-16 h-16 rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600">
@@ -478,7 +622,7 @@ export default function Home() {
               ))}
             </div>
 
-            {/* Active Story Viewer */}
+            {/* Active Story */}
             {activeStory && (
               <div className="fixed inset-0 z-50 bg-black flex flex-col">
                 <div className="flex items-center justify-between p-4">
@@ -502,14 +646,12 @@ export default function Home() {
                   )}
                 </div>
                 <div className="p-4 text-center">
-                  <button onClick={() => openUserProfile(activeStory.user_id)} className="text-pink-500 font-medium">
-                    View Profile
-                  </button>
+                  <button onClick={() => openUserProfile(activeStory.user_id)} className="text-pink-500 font-medium">View Profile</button>
                 </div>
               </div>
             )}
 
-            {/* POSTS */}
+            {/* Posts */}
             {posts.length === 0 ? (
               <p className="text-center text-gray-500 py-20">No posts yet</p>
             ) : (
@@ -529,9 +671,7 @@ export default function Home() {
                         <p className="text-xs text-gray-500">@{post.profiles?.username}</p>
                       </div>
                     </div>
-                    <button onClick={() => openUserProfile(post.user_id)} className="text-xs text-pink-500 font-medium">
-                      View Profile
-                    </button>
+                    <button onClick={() => openUserProfile(post.user_id)} className="text-xs text-pink-500 font-medium">View Profile</button>
                   </div>
 
                   {post.media_type === "video" ? (
@@ -558,9 +698,8 @@ export default function Home() {
                     </p>
                   )}
 
-                  {/* COMMENTS SECTION */}
                   {showComments[post.id] && (
-                    <div className="px-4 mt-3 space-y-3">
+                    <div className="px-4 mt-3 space-y-2">
                       {(comments[post.id] || []).map((c: any) => (
                         <div key={c.id} className="text-sm">
                           <span className="font-semibold mr-2">{c.profiles?.username}</span>
@@ -575,9 +714,7 @@ export default function Home() {
                           onChange={(e) => setCommentText({ ...commentText, [post.id]: e.target.value })}
                           className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-2 text-sm"
                         />
-                        <button onClick={() => postComment(post.id)} className="text-pink-500 text-sm font-medium px-2">
-                          Post
-                        </button>
+                        <button onClick={() => postComment(post.id)} className="text-pink-500 text-sm font-medium">Post</button>
                       </div>
                     </div>
                   )}
@@ -607,7 +744,7 @@ export default function Home() {
 
             {isPrivate && !isStory && (
               <>
-                <input type="text" placeholder="Title (e.g. My Nudes)" value={title} onChange={(e) => setTitle(e.target.value)}
+                <input type="text" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)}
                   className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3" />
                 <div className="relative">
                   <span className="absolute left-4 top-3.5 text-gray-400">₦</span>
@@ -626,18 +763,13 @@ export default function Home() {
               <div className="grid grid-cols-3 gap-2">
                 {previews.map((src, i) => (
                   <div key={i} className="aspect-square rounded-xl overflow-hidden bg-zinc-900">
-                    {files[i]?.type.startsWith("video") ? (
-                      <video src={src} className="w-full h-full object-cover" />
-                    ) : (
-                      <img src={src} className="w-full h-full object-cover" alt="" />
-                    )}
+                    <img src={src} className="w-full h-full object-cover" alt="" />
                   </div>
                 ))}
               </div>
             )}
 
-            <div onClick={() => fileRef.current?.click()}
-              className="border-2 border-dashed border-zinc-700 rounded-2xl p-8 text-center cursor-pointer">
+            <div onClick={() => fileRef.current?.click()} className="border-2 border-dashed border-zinc-700 rounded-2xl p-8 text-center cursor-pointer">
               <p className="text-gray-400">{files.length > 0 ? `${files.length} selected` : "Tap to select Photo / Video"}</p>
               <input ref={fileRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleFileSelect} />
             </div>
@@ -648,16 +780,75 @@ export default function Home() {
               className="w-full bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white font-semibold py-4 rounded-xl">
               {loading ? "Uploading..." : isStory ? "Share to Story" : isPrivate ? `Upload Private • ₦${price.toLocaleString()}` : "Share Post"}
             </button>
+          </div>
+        )}
 
-            {isStory && (
-              <button onClick={() => { setIsStory(false); setView("create"); }} className="w-full text-sm text-gray-400">
-                Cancel Story
-              </button>
+        {/* ========== MESSAGES ========== */}
+        {view === "messages" && (
+          <div className="p-4">
+            <h2 className="text-xl font-bold mb-4">Messages</h2>
+            {!profile?.is_premium && (
+              <div className="bg-zinc-900 border border-pink-500/30 rounded-2xl p-5 mb-6 text-center">
+                <p className="mb-3">Only Premium members can message</p>
+                <button onClick={becomePremium} className="bg-pink-600 hover:bg-pink-700 px-6 py-2.5 rounded-xl font-semibold">
+                  Become Premium — ₦5,000
+                </button>
+              </div>
+            )}
+            {conversations.length === 0 ? (
+              <p className="text-center text-gray-500 py-16">No conversations yet</p>
+            ) : (
+              <div className="space-y-3">
+                {conversations.map((conv) => {
+                  const other = conv.guy_id === session.user.id ? conv.girl : conv.guy;
+                  return (
+                    <div key={conv.id} onClick={() => { setCurrentChat(conv); loadChatMessages(conv.id); setView("chat"); }}
+                      className="flex items-center gap-3 p-3 bg-zinc-900 rounded-xl cursor-pointer">
+                      <div className="w-12 h-12 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center font-bold">
+                        {other?.avatar_url ? <img src={other.avatar_url} className="w-full h-full object-cover" alt="" /> : other?.username?.[0]?.toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-medium">{other?.display_name || other?.username}</p>
+                        <p className="text-xs text-gray-400">@{other?.username}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         )}
 
-        {/* ========== MY PROFILE ========== */}
+        {/* ========== CHAT ========== */}
+        {view === "chat" && currentChat && (
+          <div className="flex flex-col h-[calc(100vh-3.5rem)]">
+            <div className="p-4 border-b border-zinc-800 flex items-center gap-3">
+              <button onClick={() => setView("messages")} className="text-pink-500">←</button>
+              <span className="font-medium">Chat</span>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {chatMessages.map((msg) => (
+                <div key={msg.id} className={`flex ${msg.sender_id === session.user.id ? "justify-end" : "justify-start"}`}>
+                  <div className={`max-w-[75%] px-4 py-2 rounded-2xl text-sm ${msg.sender_id === session.user.id ? "bg-pink-600" : "bg-zinc-800"}`}>
+                    {msg.content}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="p-4 border-t border-zinc-800 flex gap-2">
+              <input
+                type="text"
+                placeholder="Type a message..."
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-2.5 text-sm"
+              />
+              <button onClick={sendMessage} className="bg-pink-600 px-5 py-2.5 rounded-full text-sm font-medium">Send</button>
+            </div>
+          </div>
+        )}
+
+        {/* ========== PROFILE ========== */}
         {view === "profile" && profile && (
           <div className="p-4">
             <div className="flex items-center gap-4 mb-6">
@@ -667,16 +858,33 @@ export default function Home() {
               <div>
                 <h2 className="text-xl font-bold">{profile.display_name || profile.username}</h2>
                 <p className="text-gray-400 text-sm">@{profile.username}</p>
-                <p className="text-xs text-pink-500 mt-1">{profile.role}</p>
+                <p className="text-xs text-pink-500 mt-1">{profile.role} {profile.is_premium && "• Premium"}</p>
               </div>
             </div>
 
             {profile.bio && <p className="text-gray-300 mb-2">{profile.bio}</p>}
             {profile.location && <p className="text-sm text-gray-500 mb-6">📍 {profile.location}</p>}
 
-            <div className="flex gap-3 mb-4">
+            {!profile.is_premium && (
+              <button onClick={becomePremium} className="w-full bg-yellow-600 hover:bg-yellow-700 py-3 rounded-xl font-semibold mb-4">
+                Become Premium — ₦5,000
+              </button>
+            )}
+
+            <div className="flex gap-3 mb-6">
               <button onClick={() => setView("edit")} className="flex-1 bg-zinc-900 border border-zinc-700 py-2.5 rounded-xl text-sm">Edit Profile</button>
               <button onClick={() => setView("saved")} className="flex-1 bg-zinc-900 border border-zinc-700 py-2.5 rounded-xl text-sm">Saved</button>
+            </div>
+
+            {/* My Posts */}
+            <h3 className="font-bold mb-3">My Posts</h3>
+            <div className="grid grid-cols-3 gap-1 mb-8">
+              {myPosts.map((p) => (
+                <div key={p.id} className="relative aspect-square bg-zinc-900 overflow-hidden">
+                  <img src={p.media_url} className="w-full h-full object-cover" alt="" />
+                  <button onClick={() => deleteMyPost(p.id)} className="absolute top-1 right-1 bg-black/70 text-xs px-1.5 py-0.5 rounded text-red-400">✕</button>
+                </div>
+              ))}
             </div>
 
             <button onClick={handleLogout} className="w-full bg-zinc-900 border border-zinc-700 py-3 rounded-xl text-red-400">
@@ -685,28 +893,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* ========== SAVED ========== */}
-        {view === "saved" && (
-          <div className="p-4">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">Saved</h2>
-              <button onClick={() => setView("profile")} className="text-pink-500 text-sm">Back</button>
-            </div>
-            {savedPosts.length === 0 ? (
-              <p className="text-center text-gray-500 py-16">No saved posts</p>
-            ) : (
-              <div className="grid grid-cols-3 gap-1">
-                {savedPosts.map((p: any) => (
-                  <div key={p.id} className="aspect-square bg-zinc-900 overflow-hidden">
-                    {p.media_type === "video" ? <video src={p.media_url} className="w-full h-full object-cover" /> : <img src={p.media_url} className="w-full h-full object-cover" alt="" />}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ========== EDIT PROFILE ========== */}
+        {/* ========== OTHER VIEWS (Edit, Saved, User Profile) ========== */}
         {view === "edit" && (
           <div className="p-4 space-y-4">
             <h2 className="text-xl font-bold">Edit Profile</h2>
@@ -732,52 +919,16 @@ export default function Home() {
           </div>
         )}
 
-        {/* ========== OTHER USER PROFILE ========== */}
-        {view === "user" && selectedUser && (
+        {view === "saved" && (
           <div className="p-4">
-            <button onClick={() => setView("feed")} className="text-sm text-gray-400 mb-4">← Back</button>
-            <div className="flex items-center gap-4 mb-6">
-              <div className="w-20 h-20 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-2xl font-bold">
-                {selectedUser.avatar_url ? <img src={selectedUser.avatar_url} className="w-full h-full object-cover" alt="" /> : selectedUser.username[0].toUpperCase()}
-              </div>
-              <div>
-                <h2 className="text-xl font-bold">{selectedUser.display_name || selectedUser.username}</h2>
-                <p className="text-gray-400 text-sm">@{selectedUser.username}</p>
-                <p className="text-xs text-pink-500">{selectedUser.role}</p>
-              </div>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold">Saved</h2>
+              <button onClick={() => setView("profile")} className="text-pink-500 text-sm">Back</button>
             </div>
-            {selectedUser.bio && <p className="text-gray-300 mb-2">{selectedUser.bio}</p>}
-            {selectedUser.location && <p className="text-sm text-gray-500 mb-4">📍 {selectedUser.location}</p>}
-
-            <h3 className="font-bold mb-3">Public Posts</h3>
-            <div className="grid grid-cols-3 gap-1 mb-8">
-              {userPosts.map((p) => (
-                <div key={p.id} className="aspect-square bg-zinc-900 overflow-hidden">
-                  {p.media_type === "video" ? <video src={p.media_url} className="w-full h-full object-cover" /> : <img src={p.media_url} className="w-full h-full object-cover" alt="" />}
-                </div>
-              ))}
-            </div>
-
-            {userPrivate.length > 0 && (
-              <>
-                <h3 className="font-bold mb-3 text-pink-500">Private Content 🔒</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  {userPrivate.map((m) => (
-                    <div key={m.id} className="relative rounded-xl overflow-hidden bg-zinc-900">
-                      <img src={m.media_url} className="w-full aspect-[3/4] object-cover locked" alt="" />
-                      <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center">
-                        <p className="font-medium text-sm mb-1">{m.title}</p>
-                        <p className="text-pink-400 font-bold">₦{m.price.toLocaleString()}</p>
-                        <p className="text-xs text-gray-300 mt-1">Unlock to view</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        )}
-      </main>
-    </div>
-  );
-                                }
+            {savedPosts.length === 0 ? (
+              <p className="text-center text-gray-500 py-16">No saved posts</p>
+            ) : (
+              <div className="grid grid-cols-3 gap-1">
+                {savedPosts.map((p: any) => (
+                  <div key={p.id} className="aspect-square bg-zinc-900 overflow-hidden">
+            
