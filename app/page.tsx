@@ -17,11 +17,13 @@ export default function Home() {
   const [myPosts, setMyPosts] = useState<any[]>([]);
   const [savedPosts, setSavedPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [feedLoading, setFeedLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [commentText, setCommentText] = useState<{ [key: string]: string }>({});
   const [showComments, setShowComments] = useState<{ [key: string]: boolean }>({});
   const [comments, setComments] = useState<{ [key: string]: any[] }>({});
   const [activeStory, setActiveStory] = useState<any>(null);
+  const [storyComment, setStoryComment] = useState("");
 
   // Messaging
   const [conversations, setConversations] = useState<any[]>([]);
@@ -116,22 +118,41 @@ export default function Home() {
   }
 
   async function loadPosts() {
-    const { data } = await supabase
-      .from("posts")
-      .select(`*, profiles (id, username, display_name, avatar_url, role, location)`)
-      .order("created_at", { ascending: false })
-      .limit(50);
+    setFeedLoading(true);
+    try {
+      const { data } = await supabase
+        .from("posts")
+        .select(`*, profiles (id, username, display_name, avatar_url, role, location)`)
+        .order("created_at", { ascending: false })
+        .limit(40);
 
-    if (data) {
-      const postsWithStats = await Promise.all(
-        data.map(async (post: any) => {
-          const { count: likesCount } = await supabase.from("likes").select("*", { count: "exact", head: true }).eq("post_id", post.id);
-          const { data: myLike } = await supabase.from("likes").select("id").eq("post_id", post.id).eq("user_id", session?.user?.id).maybeSingle();
-          const { data: mySave } = await supabase.from("saves").select("id").eq("post_id", post.id).eq("user_id", session?.user?.id).maybeSingle();
-          return { ...post, likes_count: likesCount || 0, liked_by_me: !!myLike, saved_by_me: !!mySave };
-        })
-      );
-      setPosts(smartFeedSort(postsWithStats));
+      if (data && data.length > 0) {
+        // Parallelize stats fetching for better speed
+        const postsWithStats = await Promise.all(
+          data.map(async (post: any) => {
+            const [likesRes, myLikeRes, mySaveRes] = await Promise.all([
+              supabase.from("likes").select("*", { count: "exact", head: true }).eq("post_id", post.id),
+              session?.user?.id
+                ? supabase.from("likes").select("id").eq("post_id", post.id).eq("user_id", session.user.id).maybeSingle()
+                : Promise.resolve({ data: null }),
+              session?.user?.id
+                ? supabase.from("saves").select("id").eq("post_id", post.id).eq("user_id", session.user.id).maybeSingle()
+                : Promise.resolve({ data: null }),
+            ]);
+            return {
+              ...post,
+              likes_count: likesRes.count || 0,
+              liked_by_me: !!myLikeRes.data,
+              saved_by_me: !!mySaveRes.data,
+            };
+          })
+        );
+        setPosts(smartFeedSort(postsWithStats));
+      } else {
+        setPosts([]);
+      }
+    } finally {
+      setFeedLoading(false);
     }
   }
 
@@ -190,24 +211,44 @@ export default function Home() {
     if (!session) return;
     const post = posts.find((p) => p.id === postId);
     if (!post) return;
-    if (post.liked_by_me) {
+
+    // Optimistic update for instant feedback
+    const wasLiked = post.liked_by_me;
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              liked_by_me: !wasLiked,
+              likes_count: wasLiked ? Math.max(0, (p.likes_count || 0) - 1) : (p.likes_count || 0) + 1,
+            }
+          : p
+      )
+    );
+
+    if (wasLiked) {
       await supabase.from("likes").delete().eq("post_id", postId).eq("user_id", session.user.id);
     } else {
       await supabase.from("likes").insert({ post_id: postId, user_id: session.user.id });
     }
-    loadPosts();
   }
 
   async function toggleSave(postId: string) {
     if (!session) return;
     const post = posts.find((p) => p.id === postId);
     if (!post) return;
-    if (post.saved_by_me) {
+
+    // Optimistic update
+    const wasSaved = post.saved_by_me;
+    setPosts((prev) =>
+      prev.map((p) => (p.id === postId ? { ...p, saved_by_me: !wasSaved } : p))
+    );
+
+    if (wasSaved) {
       await supabase.from("saves").delete().eq("post_id", postId).eq("user_id", session.user.id);
     } else {
       await supabase.from("saves").insert({ post_id: postId, user_id: session.user.id });
     }
-    loadPosts();
   }
 
   async function postComment(postId: string) {
@@ -582,14 +623,34 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-black pb-24">
       {/* HEADER */}
-      <header className="sticky top-0 z-50 bg-black/90 backdrop-blur border-b border-zinc-800">
-        <div className="max-w-lg mx-auto px-4 h-14 flex items-center justify-between">
-          <h1 className="text-xl font-bold text-pink-500">Lagos Girls</h1>
-          <div className="flex gap-5 text-sm">
-            <button onClick={() => setView("feed")} className={view === "feed" ? "text-pink-500" : "text-gray-400"}>Feed</button>
-            <button onClick={() => setView("create")} className={view === "create" ? "text-pink-500" : "text-gray-400"}>Post</button>
-            <button onClick={() => setView("messages")} className={view === "messages" || view === "chat" ? "text-pink-500" : "text-gray-400"}>Messages</button>
-            <button onClick={() => setView("profile")} className={view === "profile" || view === "saved" ? "text-pink-500" : "text-gray-400"}>Me</button>
+      <header className="sticky top-0 z-50 bg-black/95 backdrop-blur-md border-b border-zinc-900">
+        <div className="max-w-lg mx-auto px-4 h-[52px] flex items-center justify-between">
+          <h1 className="text-[22px] font-bold tracking-tight text-pink-500">Lagos Girls</h1>
+          <div className="flex items-center gap-5 text-[13.5px] font-medium">
+            <button
+              onClick={() => setView("feed")}
+              className={`transition-colors ${view === "feed" ? "text-pink-500" : "text-gray-400 hover:text-gray-200"}`}
+            >
+              Feed
+            </button>
+            <button
+              onClick={() => setView("create")}
+              className={`transition-colors ${view === "create" ? "text-pink-500" : "text-gray-400 hover:text-gray-200"}`}
+            >
+              Post
+            </button>
+            <button
+              onClick={() => setView("messages")}
+              className={`transition-colors ${view === "messages" || view === "chat" ? "text-pink-500" : "text-gray-400 hover:text-gray-200"}`}
+            >
+              Messages
+            </button>
+            <button
+              onClick={() => setView("profile")}
+              className={`transition-colors ${view === "profile" || view === "saved" ? "text-pink-500" : "text-gray-400 hover:text-gray-200"}`}
+            >
+              Me
+            </button>
           </div>
         </div>
       </header>
@@ -598,68 +659,143 @@ export default function Home() {
         {/* ========== FEED ========== */}
         {view === "feed" && (
           <div>
-            {/* Stories */}
-            <div className="flex gap-4 overflow-x-auto px-4 py-4 border-b border-zinc-900">
-              <div className="flex flex-col items-center gap-1 min-w-[70px]" onClick={() => { setIsStory(true); setView("create"); }}>
-                <div className="w-16 h-16 rounded-full border-2 border-dashed border-pink-500 flex items-center justify-center text-2xl text-pink-500">+</div>
-                <span className="text-xs text-gray-400">Your Story</span>
+            {/* Stories Row - Instagram style */}
+            <div className="flex gap-3.5 overflow-x-auto px-3 py-3 border-b border-zinc-900/80 scrollbar-hide">
+              <div
+                className="flex flex-col items-center gap-1.5 min-w-[72px] cursor-pointer"
+                onClick={() => { setIsStory(true); setView("create"); }}
+              >
+                <div className="relative">
+                  <div className="w-[68px] h-[68px] rounded-full border-2 border-dashed border-pink-500/80 flex items-center justify-center bg-zinc-900">
+                    <span className="text-2xl text-pink-500 font-light">+</span>
+                  </div>
+                </div>
+                <span className="text-[11px] text-gray-400 font-medium">Your Story</span>
               </div>
               {stories.map((story) => (
-                <div key={story.id} className="flex flex-col items-center gap-1 min-w-[70px]" onClick={() => setActiveStory(story)}>
-                  <div className="w-16 h-16 rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600">
+                <div
+                  key={story.id}
+                  className="flex flex-col items-center gap-1.5 min-w-[72px] cursor-pointer active:opacity-70"
+                  onClick={() => setActiveStory(story)}
+                >
+                  <div className="w-[68px] h-[68px] rounded-full p-[2.5px] bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600">
                     <div className="w-full h-full rounded-full bg-black p-[2px] overflow-hidden">
                       {story.profiles?.avatar_url ? (
                         <img src={story.profiles.avatar_url} className="w-full h-full object-cover rounded-full" alt="" />
                       ) : (
-                        <div className="w-full h-full rounded-full bg-zinc-800 flex items-center justify-center text-sm">
-                          {story.profiles?.username?.[0]?.toUpperCase()}
+                        <div className="w-full h-full rounded-full bg-zinc-800 flex items-center justify-center text-sm font-semibold">
+                          {story.profiles?.username?.[0]?.toUpperCase() || "?"}
                         </div>
                       )}
                     </div>
                   </div>
-                  <span className="text-xs text-gray-300 truncate w-16 text-center">{story.profiles?.username}</span>
+                  <span className="text-[11px] text-gray-300 truncate w-[68px] text-center font-medium">
+                    {story.profiles?.username}
+                  </span>
                 </div>
               ))}
             </div>
 
-            {/* Active Story */}
+            {/* Active Story Viewer */}
             {activeStory && (
               <div className="fixed inset-0 z-50 bg-black flex flex-col">
-                <div className="flex items-center justify-between p-4">
+                {/* Progress bar fake for now */}
+                <div className="absolute top-0 left-0 right-0 h-0.5 bg-zinc-800 z-10">
+                  <div className="h-full bg-white/90 w-full animate-pulse" />
+                </div>
+                <div className="flex items-center justify-between p-4 pt-5 relative z-10">
                   <div className="flex items-center gap-3" onClick={() => openUserProfile(activeStory.user_id)}>
-                    <div className="w-9 h-9 rounded-full bg-zinc-800 overflow-hidden">
+                    <div className="w-9 h-9 rounded-full bg-zinc-800 overflow-hidden ring-2 ring-pink-500/50">
                       {activeStory.profiles?.avatar_url ? (
                         <img src={activeStory.profiles.avatar_url} className="w-full h-full object-cover" alt="" />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-sm">{activeStory.profiles?.username?.[0]?.toUpperCase()}</div>
+                        <div className="w-full h-full flex items-center justify-center text-sm font-bold">
+                          {activeStory.profiles?.username?.[0]?.toUpperCase()}
+                        </div>
                       )}
                     </div>
-                    <span className="font-medium">{activeStory.profiles?.username}</span>
+                    <div>
+                      <span className="font-semibold text-sm">{activeStory.profiles?.username}</span>
+                      <p className="text-[11px] text-gray-400">
+                        {new Date(activeStory.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    </div>
                   </div>
-                  <button onClick={() => setActiveStory(null)} className="text-2xl">×</button>
+                  <button onClick={() => setActiveStory(null)} className="w-9 h-9 flex items-center justify-center text-2xl text-white/90">
+                    ×
+                  </button>
                 </div>
-                <div className="flex-1 flex items-center justify-center">
+                <div className="flex-1 flex items-center justify-center px-1">
                   {activeStory.media_type === "video" ? (
-                    <video src={activeStory.media_url} controls autoPlay className="max-h-full max-w-full" />
+                    <video src={activeStory.media_url} controls autoPlay playsInline className="max-h-full max-w-full rounded-sm" />
                   ) : (
                     <img src={activeStory.media_url} className="max-h-full max-w-full object-contain" alt="" />
                   )}
                 </div>
-                <div className="p-4 text-center">
-                  <button onClick={() => openUserProfile(activeStory.user_id)} className="text-pink-500 font-medium">View Profile</button>
+                {/* Simple reply bar */}
+                <div className="p-4 pb-8 flex gap-3 items-center border-t border-zinc-900">
+                  <input
+                    type="text"
+                    placeholder="Reply to story..."
+                    value={storyComment}
+                    onChange={(e) => setStoryComment(e.target.value)}
+                    className="flex-1 bg-zinc-900/80 border border-zinc-700 rounded-full px-4 py-2.5 text-sm placeholder:text-gray-500 focus:outline-none focus:border-pink-500/50"
+                  />
+                  <button
+                    onClick={() => {
+                      if (storyComment.trim()) {
+                        // For now just clear - full story comments need a table
+                        setMessage("Reply sent (coming soon)");
+                        setStoryComment("");
+                        setTimeout(() => setMessage(""), 2000);
+                      }
+                    }}
+                    className="text-pink-500 font-semibold text-sm px-2"
+                  >
+                    Send
+                  </button>
                 </div>
               </div>
             )}
 
+            {/* Loading Skeleton */}
+            {feedLoading && posts.length === 0 && (
+              <div className="space-y-6 pt-2">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="animate-pulse">
+                    <div className="flex items-center gap-3 px-4 py-3">
+                      <div className="w-10 h-10 rounded-full bg-zinc-800" />
+                      <div className="flex-1 space-y-1.5">
+                        <div className="h-3 w-28 bg-zinc-800 rounded" />
+                        <div className="h-2.5 w-16 bg-zinc-800/70 rounded" />
+                      </div>
+                    </div>
+                    <div className="w-full aspect-[4/5] bg-zinc-900" />
+                    <div className="px-4 pt-3 space-y-2">
+                      <div className="h-4 w-24 bg-zinc-800 rounded" />
+                      <div className="h-3 w-3/4 bg-zinc-800/60 rounded" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Posts */}
-            {posts.length === 0 ? (
-              <p className="text-center text-gray-500 py-20">No posts yet</p>
+            {!feedLoading && posts.length === 0 ? (
+              <div className="text-center py-24 px-6">
+                <p className="text-gray-500 text-lg mb-1">No posts yet</p>
+                <p className="text-gray-600 text-sm">Be the first to share something</p>
+              </div>
             ) : (
               posts.map((post) => (
-                <article key={post.id} className="border-b border-zinc-900 pb-5">
-                  <div className="flex items-center justify-between px-4 py-3">
-                    <div className="flex items-center gap-3" onClick={() => openUserProfile(post.user_id)}>
-                      <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-sm font-bold">
+                <article key={post.id} className="border-b border-zinc-900/80 pb-4">
+                  {/* Header */}
+                  <div className="flex items-center justify-between px-3.5 py-2.5">
+                    <div
+                      className="flex items-center gap-2.5 cursor-pointer active:opacity-70"
+                      onClick={() => openUserProfile(post.user_id)}
+                    >
+                      <div className="w-[38px] h-[38px] rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-sm font-bold ring-1 ring-zinc-700">
                         {post.profiles?.avatar_url ? (
                           <img src={post.profiles.avatar_url} className="w-full h-full object-cover" alt="" />
                         ) : (
@@ -667,54 +803,93 @@ export default function Home() {
                         )}
                       </div>
                       <div>
-                        <p className="font-semibold text-sm">{post.profiles?.display_name || post.profiles?.username}</p>
-                        <p className="text-xs text-gray-500">@{post.profiles?.username}</p>
+                        <p className="font-semibold text-[13.5px] leading-tight">
+                          {post.profiles?.display_name || post.profiles?.username}
+                        </p>
+                        <p className="text-[11px] text-gray-500 leading-tight">@{post.profiles?.username}</p>
                       </div>
                     </div>
-                    <button onClick={() => openUserProfile(post.user_id)} className="text-xs text-pink-500 font-medium">View Profile</button>
-                  </div>
-
-                  {post.media_type === "video" ? (
-                    <video src={post.media_url} controls className="w-full aspect-[4/5] bg-zinc-900" />
-                  ) : (
-                    <img src={post.media_url} className="w-full aspect-[4/5] object-cover bg-zinc-900" alt="" />
-                  )}
-
-                  <div className="flex items-center gap-6 px-4 pt-3">
-                    <button onClick={() => toggleLike(post.id)} className="flex items-center gap-1">
-                      <span className="text-2xl">{post.liked_by_me ? "❤️" : "🤍"}</span>
-                      <span className="text-sm">{post.likes_count || 0}</span>
-                    </button>
-                    <button onClick={() => openComments(post.id)} className="text-2xl">💬</button>
-                    <button onClick={() => toggleSave(post.id)} className="text-2xl">
-                      {post.saved_by_me ? "💾" : "📥"}
+                    <button
+                      onClick={() => openUserProfile(post.user_id)}
+                      className="text-[12px] text-pink-500 font-semibold px-2 py-1"
+                    >
+                      View
                     </button>
                   </div>
 
+                  {/* Media */}
+                  <div className="relative bg-zinc-950">
+                    {post.media_type === "video" ? (
+                      <video src={post.media_url} controls playsInline className="w-full aspect-[4/5] object-cover" />
+                    ) : (
+                      <img
+                        src={post.media_url}
+                        className="w-full aspect-[4/5] object-cover"
+                        alt=""
+                        loading="lazy"
+                      />
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center justify-between px-3.5 pt-2.5 pb-1">
+                    <div className="flex items-center gap-4">
+                      <button
+                        onClick={() => toggleLike(post.id)}
+                        className="flex items-center gap-1.5 active:scale-90 transition-transform"
+                      >
+                        <span className="text-[26px] leading-none">{post.liked_by_me ? "❤️" : "🤍"}</span>
+                        {(post.likes_count || 0) > 0 && (
+                          <span className="text-[13px] font-semibold tabular-nums">{post.likes_count}</span>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => openComments(post.id)}
+                        className="text-[24px] leading-none active:scale-90 transition-transform"
+                      >
+                        💬
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => toggleSave(post.id)}
+                      className="text-[22px] leading-none active:scale-90 transition-transform"
+                    >
+                      {post.saved_by_me ? "🔖" : "📑"}
+                    </button>
+                  </div>
+
+                  {/* Caption */}
                   {post.caption && (
-                    <p className="px-4 mt-2 text-sm">
-                      <span className="font-semibold mr-2">{post.profiles?.username}</span>
-                      {post.caption}
+                    <p className="px-3.5 mt-1 text-[13.5px] leading-snug">
+                      <span className="font-semibold mr-1.5">{post.profiles?.username}</span>
+                      <span className="text-gray-100">{post.caption}</span>
                     </p>
                   )}
 
+                  {/* Comments */}
                   {showComments[post.id] && (
-                    <div className="px-4 mt-3 space-y-2">
+                    <div className="px-3.5 mt-3 space-y-2.5 pb-1">
                       {(comments[post.id] || []).map((c: any) => (
-                        <div key={c.id} className="text-sm">
-                          <span className="font-semibold mr-2">{c.profiles?.username}</span>
-                          {c.content}
+                        <div key={c.id} className="text-[13px] leading-snug">
+                          <span className="font-semibold mr-1.5">{c.profiles?.username}</span>
+                          <span className="text-gray-200">{c.content}</span>
                         </div>
                       ))}
-                      <div className="flex gap-2 mt-2">
+                      <div className="flex gap-2 mt-2 items-center">
                         <input
                           type="text"
                           placeholder="Add a comment..."
                           value={commentText[post.id] || ""}
                           onChange={(e) => setCommentText({ ...commentText, [post.id]: e.target.value })}
-                          className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-2 text-sm"
+                          className="flex-1 bg-zinc-900/80 border border-zinc-800 rounded-full px-4 py-2 text-[13px] placeholder:text-gray-500 focus:outline-none focus:border-zinc-600"
                         />
-                        <button onClick={() => postComment(post.id)} className="text-pink-500 text-sm font-medium">Post</button>
+                        <button
+                          onClick={() => postComment(post.id)}
+                          className="text-pink-500 text-[13px] font-semibold px-1 disabled:opacity-40"
+                          disabled={!commentText[post.id]?.trim()}
+                        >
+                          Post
+                        </button>
                       </div>
                     </div>
                   )}
