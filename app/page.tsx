@@ -696,64 +696,83 @@ export default function Home() {
               ))}
             </div>
 
-            {/* Active Story Viewer */}
+            {/* Active Story Viewer - more controlled size */}
             {activeStory && (
-              <div className="fixed inset-0 z-50 bg-black flex flex-col">
-                {/* Progress bar fake for now */}
-                <div className="absolute top-0 left-0 right-0 h-0.5 bg-zinc-800 z-10">
-                  <div className="h-full bg-white/90 w-full animate-pulse" />
-                </div>
-                <div className="flex items-center justify-between p-4 pt-5 relative z-10">
-                  <div className="flex items-center gap-3" onClick={() => openUserProfile(activeStory.user_id)}>
-                    <div className="w-9 h-9 rounded-full bg-zinc-800 overflow-hidden ring-2 ring-pink-500/50">
-                      {activeStory.profiles?.avatar_url ? (
-                        <img src={activeStory.profiles.avatar_url} className="w-full h-full object-cover" alt="" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-sm font-bold">
-                          {activeStory.profiles?.username?.[0]?.toUpperCase()}
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <span className="font-semibold text-sm">{activeStory.profiles?.username}</span>
-                      <p className="text-[11px] text-gray-400">
-                        {new Date(activeStory.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </p>
-                    </div>
+              <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-3">
+                <div className="relative w-full max-w-md max-h-[85vh] bg-black rounded-2xl overflow-hidden flex flex-col shadow-2xl border border-zinc-800">
+                  {/* Progress */}
+                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-zinc-800 z-20">
+                    <div className="h-full bg-white/90 w-3/4" />
                   </div>
-                  <button onClick={() => setActiveStory(null)} className="w-9 h-9 flex items-center justify-center text-2xl text-white/90">
-                    ×
-                  </button>
-                </div>
-                <div className="flex-1 flex items-center justify-center px-1">
-                  {activeStory.media_type === "video" ? (
-                    <video src={activeStory.media_url} controls autoPlay playsInline className="max-h-full max-w-full rounded-sm" />
-                  ) : (
-                    <img src={activeStory.media_url} className="max-h-full max-w-full object-contain" alt="" />
-                  )}
-                </div>
-                {/* Simple reply bar */}
-                <div className="p-4 pb-8 flex gap-3 items-center border-t border-zinc-900">
-                  <input
-                    type="text"
-                    placeholder="Reply to story..."
-                    value={storyComment}
-                    onChange={(e) => setStoryComment(e.target.value)}
-                    className="flex-1 bg-zinc-900/80 border border-zinc-700 rounded-full px-4 py-2.5 text-sm placeholder:text-gray-500 focus:outline-none focus:border-pink-500/50"
-                  />
-                  <button
-                    onClick={() => {
-                      if (storyComment.trim()) {
-                        // For now just clear - full story comments need a table
-                        setMessage("Reply sent (coming soon)");
-                        setStoryComment("");
-                        setTimeout(() => setMessage(""), 2000);
-                      }
-                    }}
-                    className="text-pink-500 font-semibold text-sm px-2"
-                  >
-                    Send
-                  </button>
+
+                  {/* Header */}
+                  <div className="flex items-center justify-between px-3.5 py-3 relative z-10 bg-gradient-to-b from-black/80 to-transparent">
+                    <div className="flex items-center gap-2.5" onClick={() => { setActiveStory(null); openUserProfile(activeStory.user_id); }}>
+                      <div className="w-8 h-8 rounded-full bg-zinc-800 overflow-hidden ring-2 ring-pink-500/60">
+                        {activeStory.profiles?.avatar_url ? (
+                          <img src={activeStory.profiles.avatar_url} className="w-full h-full object-cover" alt="" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-xs font-bold">
+                            {activeStory.profiles?.username?.[0]?.toUpperCase()}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <span className="font-semibold text-[13px]">{activeStory.profiles?.username}</span>
+                        <p className="text-[10px] text-gray-400">
+                          {new Date(activeStory.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setActiveStory(null)}
+                      className="w-8 h-8 flex items-center justify-center text-xl text-white/90 rounded-full bg-black/40"
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  {/* Media - constrained */}
+                  <div className="flex-1 flex items-center justify-center bg-zinc-950 min-h-[280px] max-h-[55vh]">
+                    {activeStory.media_type === "video" ? (
+                      <video
+                        src={activeStory.media_url}
+                        controls
+                        autoPlay
+                        playsInline
+                        className="max-h-full max-w-full object-contain"
+                      />
+                    ) : (
+                      <img
+                        src={activeStory.media_url}
+                        className="max-h-full max-w-full object-contain"
+                        alt=""
+                      />
+                    )}
+                  </div>
+
+                  {/* Reply bar */}
+                  <div className="p-3 flex gap-2.5 items-center border-t border-zinc-900 bg-black">
+                    <input
+                      type="text"
+                      placeholder="Reply to story..."
+                      value={storyComment}
+                      onChange={(e) => setStoryComment(e.target.value)}
+                      className="flex-1 bg-zinc-900 border border-zinc-800 rounded-full px-4 py-2 text-[13px] placeholder:text-gray-500 focus:outline-none focus:border-pink-500/40"
+                    />
+                    <button
+                      onClick={() => {
+                        if (storyComment.trim()) {
+                          setMessage("Reply sent (coming soon)");
+                          setStoryComment("");
+                          setTimeout(() => setMessage(""), 2000);
+                        }
+                      }}
+                      className="text-pink-500 font-semibold text-[13px] px-2"
+                    >
+                      Send
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -817,14 +836,19 @@ export default function Home() {
                     </button>
                   </div>
 
-                  {/* Media */}
-                  <div className="relative bg-zinc-950">
+                  {/* Media - better fitting */}
+                  <div className="relative bg-zinc-950 flex items-center justify-center overflow-hidden">
                     {post.media_type === "video" ? (
-                      <video src={post.media_url} controls playsInline className="w-full aspect-[4/5] object-cover" />
+                      <video
+                        src={post.media_url}
+                        controls
+                        playsInline
+                        className="w-full max-h-[70vh] object-contain bg-black"
+                      />
                     ) : (
                       <img
                         src={post.media_url}
-                        className="w-full aspect-[4/5] object-cover"
+                        className="w-full max-h-[70vh] object-contain bg-black"
                         alt=""
                         loading="lazy"
                       />
@@ -902,58 +926,109 @@ export default function Home() {
         {/* ========== CREATE ========== */}
         {view === "create" && (
           <div className="p-4 space-y-5">
-            <h2 className="text-xl font-bold">{isStory ? "Add to Story" : "Create Post"}</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-[18px] font-bold">{isStory ? "Add to Story" : "Create Post"}</h2>
+              {!isStory && (
+                <button
+                  onClick={() => { setIsStory(true); setIsPrivate(false); }}
+                  className="text-[12px] text-pink-500 font-medium"
+                >
+                  Switch to Story
+                </button>
+              )}
+              {isStory && (
+                <button
+                  onClick={() => setIsStory(false)}
+                  className="text-[12px] text-pink-500 font-medium"
+                >
+                  Switch to Post
+                </button>
+              )}
+            </div>
 
             {!isStory && (
-              <div className="flex gap-3">
-                <button onClick={() => { setIsPrivate(false); setIsStory(false); }}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium ${!isPrivate && !isStory ? "bg-pink-600" : "bg-zinc-800"}`}>
+              <div className="flex p-1 bg-zinc-900 rounded-xl">
+                <button
+                  onClick={() => { setIsPrivate(false); setIsStory(false); }}
+                  className={`flex-1 py-2.5 rounded-lg text-[13px] font-medium transition ${!isPrivate ? "bg-pink-600 text-white" : "text-gray-400"}`}
+                >
                   Public
                 </button>
-                <button onClick={() => { setIsPrivate(true); setIsStory(false); }}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium ${isPrivate ? "bg-pink-600" : "bg-zinc-800"}`}>
+                <button
+                  onClick={() => { setIsPrivate(true); setIsStory(false); }}
+                  className={`flex-1 py-2.5 rounded-lg text-[13px] font-medium transition ${isPrivate ? "bg-pink-600 text-white" : "text-gray-400"}`}
+                >
                   Private ₦
                 </button>
               </div>
             )}
 
             {isPrivate && !isStory && (
-              <>
-                <input type="text" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)}
-                  className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3" />
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  placeholder="Title for private content"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-[14px] placeholder:text-gray-500"
+                />
                 <div className="relative">
-                  <span className="absolute left-4 top-3.5 text-gray-400">₦</span>
-                  <input type="number" value={price} onChange={(e) => setPrice(Number(e.target.value))}
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded-xl pl-8 pr-4 py-3" />
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-[14px]">₦</span>
+                  <input
+                    type="number"
+                    value={price}
+                    onChange={(e) => setPrice(Number(e.target.value))}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-8 pr-4 py-3 text-[14px]"
+                  />
                 </div>
-              </>
+              </div>
             )}
 
             {!isPrivate && !isStory && (
-              <textarea placeholder="Write a caption..." value={caption} onChange={(e) => setCaption(e.target.value)}
-                rows={3} className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 resize-none" />
+              <textarea
+                placeholder="Write a caption..."
+                value={caption}
+                onChange={(e) => setCaption(e.target.value)}
+                rows={3}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 resize-none text-[14px] placeholder:text-gray-500"
+              />
             )}
 
             {previews.length > 0 && (
               <div className="grid grid-cols-3 gap-2">
                 {previews.map((src, i) => (
-                  <div key={i} className="aspect-square rounded-xl overflow-hidden bg-zinc-900">
+                  <div key={i} className="aspect-square rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800">
                     <img src={src} className="w-full h-full object-cover" alt="" />
                   </div>
                 ))}
               </div>
             )}
 
-            <div onClick={() => fileRef.current?.click()} className="border-2 border-dashed border-zinc-700 rounded-2xl p-8 text-center cursor-pointer">
-              <p className="text-gray-400">{files.length > 0 ? `${files.length} selected` : "Tap to select Photo / Video"}</p>
+            <div
+              onClick={() => fileRef.current?.click()}
+              className="border border-dashed border-zinc-700 rounded-2xl py-10 text-center cursor-pointer active:bg-zinc-900/50 transition"
+            >
+              <p className="text-[28px] mb-2">📷</p>
+              <p className="text-gray-400 text-[14px]">
+                {files.length > 0 ? `${files.length} file${files.length > 1 ? "s" : ""} selected` : "Tap to select Photo / Video"}
+              </p>
               <input ref={fileRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleFileSelect} />
             </div>
 
-            {message && <p className="text-center text-sm text-pink-400">{message}</p>}
+            {message && <p className="text-center text-[13px] text-pink-400">{message}</p>}
 
-            <button onClick={handleCreatePost} disabled={loading || files.length === 0}
-              className="w-full bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white font-semibold py-4 rounded-xl">
-              {loading ? "Uploading..." : isStory ? "Share to Story" : isPrivate ? `Upload Private • ₦${price.toLocaleString()}` : "Share Post"}
+            <button
+              onClick={handleCreatePost}
+              disabled={loading || files.length === 0}
+              className="w-full bg-pink-600 hover:bg-pink-500 disabled:opacity-40 text-white font-semibold py-3.5 rounded-xl text-[15px] transition"
+            >
+              {loading
+                ? "Uploading..."
+                : isStory
+                ? "Share to Story"
+                : isPrivate
+                ? `Upload Private • ₦${price.toLocaleString()}`
+                : "Share Post"}
             </button>
           </div>
         )}
@@ -961,30 +1036,48 @@ export default function Home() {
         {/* ========== MESSAGES ========== */}
         {view === "messages" && (
           <div className="p-4">
-            <h2 className="text-xl font-bold mb-4">Messages</h2>
+            <h2 className="text-[18px] font-bold mb-4">Messages</h2>
             {!profile?.is_premium && (
-              <div className="bg-zinc-900 border border-pink-500/30 rounded-2xl p-5 mb-6 text-center">
-                <p className="mb-3">Only Premium members can message</p>
-                <button onClick={becomePremium} className="bg-pink-600 hover:bg-pink-700 px-6 py-2.5 rounded-xl font-semibold">
+              <div className="bg-zinc-900/80 border border-pink-500/20 rounded-2xl p-6 mb-6 text-center">
+                <p className="text-[15px] mb-1 font-medium">Premium only</p>
+                <p className="text-[13px] text-gray-400 mb-4">Unlock messaging to chat with girls</p>
+                <button
+                  onClick={becomePremium}
+                  className="bg-pink-600 hover:bg-pink-500 px-6 py-2.5 rounded-xl font-semibold text-[14px]"
+                >
                   Become Premium — ₦5,000
                 </button>
               </div>
             )}
             {conversations.length === 0 ? (
-              <p className="text-center text-gray-500 py-16">No conversations yet</p>
+              <div className="text-center py-20">
+                <p className="text-gray-500 text-[15px]">No conversations yet</p>
+                <p className="text-gray-600 text-[13px] mt-1">Start chatting from someone’s profile</p>
+              </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {conversations.map((conv) => {
                   const other = conv.guy_id === session.user.id ? conv.girl : conv.guy;
                   return (
-                    <div key={conv.id} onClick={() => { setCurrentChat(conv); loadChatMessages(conv.id); setView("chat"); }}
-                      className="flex items-center gap-3 p-3 bg-zinc-900 rounded-xl cursor-pointer">
-                      <div className="w-12 h-12 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center font-bold">
-                        {other?.avatar_url ? <img src={other.avatar_url} className="w-full h-full object-cover" alt="" /> : other?.username?.[0]?.toUpperCase()}
+                    <div
+                      key={conv.id}
+                      onClick={() => {
+                        setCurrentChat(conv);
+                        loadChatMessages(conv.id);
+                        setView("chat");
+                      }}
+                      className="flex items-center gap-3 p-3 bg-zinc-900/60 rounded-xl cursor-pointer active:bg-zinc-800 transition"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center font-bold shrink-0">
+                        {other?.avatar_url ? (
+                          <img src={other.avatar_url} className="w-full h-full object-cover" alt="" />
+                        ) : (
+                          other?.username?.[0]?.toUpperCase()
+                        )}
                       </div>
-                      <div>
-                        <p className="font-medium">{other?.display_name || other?.username}</p>
-                        <p className="text-xs text-gray-400">@{other?.username}</p>
+                      <div className="min-w-0">
+                        <p className="font-medium text-[14px] truncate">{other?.display_name || other?.username}</p>
+                        <p className="text-[12px] text-gray-500 truncate">@{other?.username}</p>
                       </div>
                     </div>
                   );
@@ -1025,46 +1118,121 @@ export default function Home() {
 
         {/* ========== PROFILE ========== */}
         {view === "profile" && profile && (
-          <div className="p-4">
-            <div className="flex items-center gap-4 mb-6">
-              <div className="w-20 h-20 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-2xl font-bold">
-                {profile.avatar_url ? <img src={profile.avatar_url} className="w-full h-full object-cover" alt="" /> : profile.username[0].toUpperCase()}
-              </div>
-              <div>
-                <h2 className="text-xl font-bold">{profile.display_name || profile.username}</h2>
-                <p className="text-gray-400 text-sm">@{profile.username}</p>
-                <p className="text-xs text-pink-500 mt-1">{profile.role} {profile.is_premium && "• Premium"}</p>
-              </div>
-            </div>
-
-            {profile.bio && <p className="text-gray-300 mb-2">{profile.bio}</p>}
-            {profile.location && <p className="text-sm text-gray-500 mb-6">📍 {profile.location}</p>}
-
-            {!profile.is_premium && (
-              <button onClick={becomePremium} className="w-full bg-yellow-600 hover:bg-yellow-700 py-3 rounded-xl font-semibold mb-4">
-                Become Premium — ₦5,000
-              </button>
-            )}
-
-            <div className="flex gap-3 mb-6">
-              <button onClick={() => setView("edit")} className="flex-1 bg-zinc-900 border border-zinc-700 py-2.5 rounded-xl text-sm">Edit Profile</button>
-              <button onClick={() => setView("saved")} className="flex-1 bg-zinc-900 border border-zinc-700 py-2.5 rounded-xl text-sm">Saved</button>
-            </div>
-
-            {/* My Posts */}
-            <h3 className="font-bold mb-3">My Posts</h3>
-            <div className="grid grid-cols-3 gap-1 mb-8">
-              {myPosts.map((p) => (
-                <div key={p.id} className="relative aspect-square bg-zinc-900 overflow-hidden">
-                  <img src={p.media_url} className="w-full h-full object-cover" alt="" />
-                  <button onClick={() => deleteMyPost(p.id)} className="absolute top-1 right-1 bg-black/70 text-xs px-1.5 py-0.5 rounded text-red-400">✕</button>
+          <div className="pb-8">
+            {/* Profile Header */}
+            <div className="px-4 pt-5 pb-4">
+              <div className="flex items-start gap-4">
+                <div className="w-[86px] h-[86px] rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-3xl font-bold ring-2 ring-zinc-700 shrink-0">
+                  {profile.avatar_url ? (
+                    <img src={profile.avatar_url} className="w-full h-full object-cover" alt="" />
+                  ) : (
+                    profile.username[0].toUpperCase()
+                  )}
                 </div>
-              ))}
+                <div className="flex-1 min-w-0 pt-1">
+                  <h2 className="text-[20px] font-bold leading-tight truncate">
+                    {profile.display_name || profile.username}
+                  </h2>
+                  <p className="text-[13px] text-gray-400 mt-0.5">@{profile.username}</p>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className="text-[11px] font-medium text-pink-500 bg-pink-500/10 px-2 py-0.5 rounded-full">
+                      {profile.role}
+                    </span>
+                    {profile.is_premium && (
+                      <span className="text-[11px] font-medium text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full">
+                        Premium
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {profile.bio && (
+                <p className="text-[13.5px] text-gray-200 mt-4 leading-relaxed">{profile.bio}</p>
+              )}
+              {profile.location && (
+                <p className="text-[12.5px] text-gray-500 mt-1.5 flex items-center gap-1">
+                  <span>📍</span> {profile.location}
+                </p>
+              )}
+
+              {/* Stats */}
+              <div className="flex gap-6 mt-4 pt-1">
+                <div>
+                  <p className="text-[16px] font-bold">{myPosts.length}</p>
+                  <p className="text-[11px] text-gray-500">Posts</p>
+                </div>
+              </div>
             </div>
 
-            <button onClick={handleLogout} className="w-full bg-zinc-900 border border-zinc-700 py-3 rounded-xl text-red-400">
-              Logout
-            </button>
+            {/* Actions */}
+            <div className="px-4 space-y-2.5">
+              {!profile.is_premium && (
+                <button
+                  onClick={becomePremium}
+                  className="w-full bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 py-3 rounded-xl font-semibold text-[14px]"
+                >
+                  Become Premium — ₦5,000
+                </button>
+              )}
+              <div className="flex gap-2.5">
+                <button
+                  onClick={() => setView("edit")}
+                  className="flex-1 bg-zinc-900 border border-zinc-800 py-2.5 rounded-xl text-[13px] font-medium"
+                >
+                  Edit Profile
+                </button>
+                <button
+                  onClick={() => setView("saved")}
+                  className="flex-1 bg-zinc-900 border border-zinc-800 py-2.5 rounded-xl text-[13px] font-medium"
+                >
+                  Saved
+                </button>
+              </div>
+            </div>
+
+            {/* My Posts Grid */}
+            <div className="mt-6 border-t border-zinc-900">
+              <div className="px-4 py-3 flex items-center justify-between">
+                <h3 className="font-semibold text-[14px]">My Posts</h3>
+                <span className="text-[12px] text-gray-500">{myPosts.length} posts</span>
+              </div>
+              {myPosts.length === 0 ? (
+                <div className="text-center py-16 px-6">
+                  <p className="text-gray-500 text-[15px]">No posts yet</p>
+                  <p className="text-gray-600 text-[13px] mt-1">Share your first post</p>
+                  <button
+                    onClick={() => setView("create")}
+                    className="mt-4 text-pink-500 text-[13px] font-medium"
+                  >
+                    Create Post
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-[2px]">
+                  {myPosts.map((p) => (
+                    <div key={p.id} className="relative aspect-square bg-zinc-900 overflow-hidden group">
+                      <img src={p.media_url} className="w-full h-full object-cover" alt="" />
+                      <button
+                        onClick={() => deleteMyPost(p.id)}
+                        className="absolute top-1.5 right-1.5 bg-black/70 text-[11px] w-6 h-6 flex items-center justify-center rounded-full text-red-400 opacity-80"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="px-4 mt-8">
+              <button
+                onClick={handleLogout}
+                className="w-full bg-zinc-900/80 border border-zinc-800 py-3 rounded-xl text-red-400 text-[14px] font-medium"
+              >
+                Logout
+              </button>
+            </div>
           </div>
         )}
         {/* ========== OTHER VIEWS (Edit, Saved, User Profile) ========== */}
