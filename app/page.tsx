@@ -85,7 +85,10 @@ export default function Home() {
       loadStories();
     }
     if (view === "saved" && session) loadSavedPosts();
-    if (view === "profile" && session) loadMyPosts();
+    if (view === "profile" && session) {
+      ensureProfile(session.user);
+      loadMyPosts();
+    }
     if (view === "messages" && session) loadConversations();
   }, [view]);
 
@@ -1253,6 +1256,19 @@ export default function Home() {
         )}
 
         {/* ========== PROFILE ========== */}
+        {view === "profile" && !profile && (
+          <div className="flex flex-col items-center justify-center py-24 px-6">
+            <div className="w-10 h-10 border-2 border-pink-500 border-t-transparent rounded-full animate-spin mb-4" />
+            <p className="text-gray-400 text-sm">Loading profile...</p>
+            <button
+              onClick={() => session && ensureProfile(session.user)}
+              className="mt-4 text-pink-500 text-sm font-medium"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
         {view === "profile" && profile && (
           <div className="pb-8">
             {/* Profile Header */}
@@ -1262,17 +1278,17 @@ export default function Home() {
                   {profile.avatar_url ? (
                     <img src={profile.avatar_url} className="w-full h-full object-cover" alt="" />
                   ) : (
-                    profile.username[0].toUpperCase()
+                    (profile.username || "?")[0].toUpperCase()
                   )}
                 </div>
                 <div className="flex-1 min-w-0 pt-1">
                   <h2 className="text-[20px] font-bold leading-tight truncate">
-                    {profile.display_name || profile.username}
+                    {profile.display_name || profile.username || "User"}
                   </h2>
-                  <p className="text-[13px] text-gray-400 mt-0.5">@{profile.username}</p>
+                  <p className="text-[13px] text-gray-400 mt-0.5">@{profile.username || "user"}</p>
                   <div className="flex items-center gap-2 mt-1.5">
                     <span className="text-[11px] font-medium text-pink-500 bg-pink-500/10 px-2 py-0.5 rounded-full">
-                      {profile.role}
+                      {profile.role || "GUY"}
                     </span>
                     {profile.is_premium && (
                       <span className="text-[11px] font-medium text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full">
