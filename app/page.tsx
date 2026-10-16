@@ -892,7 +892,6 @@ export default function Home() {
             </button>
           </div>
         )}
-
         {/* ========== OTHER VIEWS (Edit, Saved, User Profile) ========== */}
         {view === "edit" && (
           <div className="p-4 space-y-4">
@@ -931,4 +930,64 @@ export default function Home() {
               <div className="grid grid-cols-3 gap-1">
                 {savedPosts.map((p: any) => (
                   <div key={p.id} className="aspect-square bg-zinc-900 overflow-hidden">
-            
+                    <img src={p.media_url} className="w-full h-full object-cover" alt="" />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {view === "user" && selectedUser && (
+          <div className="p-4">
+            <button onClick={() => setView("feed")} className="text-sm text-gray-400 mb-4">← Back</button>
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-20 h-20 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-2xl font-bold">
+                {selectedUser.avatar_url ? <img src={selectedUser.avatar_url} className="w-full h-full object-cover" alt="" /> : selectedUser.username[0].toUpperCase()}
+              </div>
+              <div>
+                <h2 className="text-xl font-bold">{selectedUser.display_name || selectedUser.username}</h2>
+                <p className="text-gray-400 text-sm">@{selectedUser.username}</p>
+                <p className="text-xs text-pink-500">{selectedUser.role}</p>
+              </div>
+            </div>
+            {selectedUser.bio && <p className="text-gray-300 mb-2">{selectedUser.bio}</p>}
+            {selectedUser.location && <p className="text-sm text-gray-500 mb-4">📍 {selectedUser.location}</p>}
+
+            {profile?.is_premium && selectedUser.role === "GIRL" && (
+              <button onClick={() => startChat(selectedUser.id)} className="w-full bg-pink-600 hover:bg-pink-700 py-3 rounded-xl font-semibold mb-6">
+                Message
+              </button>
+            )}
+
+            <h3 className="font-bold mb-3">Public Posts</h3>
+            <div className="grid grid-cols-3 gap-1 mb-8">
+              {userPosts.map((p) => (
+                <div key={p.id} className="aspect-square bg-zinc-900 overflow-hidden">
+                  <img src={p.media_url} className="w-full h-full object-cover" alt="" />
+                </div>
+              ))}
+            </div>
+
+            {userPrivate.length > 0 && (
+              <>
+                <h3 className="font-bold mb-3 text-pink-500">Private Content 🔒</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {userPrivate.map((m) => (
+                    <div key={m.id} className="relative rounded-xl overflow-hidden bg-zinc-900">
+                      <img src={m.media_url} className="w-full aspect-[3/4] object-cover locked" alt="" />
+                      <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center">
+                        <p className="font-medium text-sm mb-1">{m.title}</p>
+                        <p className="text-pink-400 font-bold">₦{m.price.toLocaleString()}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
