@@ -53,8 +53,7 @@ export default function AdminPage() {
     setLoading(true);
     setMessage("");
 
-    try {
-      const fakeEmail = `${username.toLowerCase()}@lagosgirls.fake`;
+    try {const fakeEmail = `${username.toLowerCase()}${Date.now()}@gmail.com`;
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: fakeEmail,
