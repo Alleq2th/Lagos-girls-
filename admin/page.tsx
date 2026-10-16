@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { supabase } from "../../../lib/supabase";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  "https://xbqayhlpsvpjfehdbznz.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhicWF5aGxwc3ZwamZlaGRiem56Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIwMTU1ODYsImV4cCI6MjEwNzU5MTU4Nn0.zjYGcVkXSLq7NmknIwonyMxStzkfPzK-cC_xkC4y-qo"
+);
 
 export default function AdminPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -9,7 +14,6 @@ export default function AdminPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Create account form
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
@@ -17,12 +21,9 @@ export default function AdminPage() {
   const [role, setRole] = useState<"GIRL" | "GUY">("GIRL");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
 
-  // List of fake accounts
   const [accounts, setAccounts] = useState<any[]>([]);
-
   const avatarRef = useRef<HTMLInputElement>(null);
 
-  // Change this password to whatever you want
   const ADMIN_PASSWORD = "lagos2025";
 
   useEffect(() => {
@@ -53,10 +54,8 @@ export default function AdminPage() {
     setMessage("");
 
     try {
-      // 1. Create a fake email
       const fakeEmail = `${username.toLowerCase()}@lagosgirls.fake`;
 
-      // 2. Create auth user (with a default password)
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: fakeEmail,
         password: "FakePass123!",
@@ -70,7 +69,6 @@ export default function AdminPage() {
 
       let avatar_url = null;
 
-      // 3. Upload avatar if selected
       if (avatarFile) {
         const ext = avatarFile.name.split(".").pop();
         const fileName = `avatar-${authData.user.id}.${ext}`;
@@ -84,7 +82,6 @@ export default function AdminPage() {
         }
       }
 
-      // 4. Create profile
       const { error: profileError } = await supabase.from("profiles").insert({
         id: authData.user.id,
         username: username.toLowerCase(),
@@ -144,7 +141,6 @@ export default function AdminPage() {
           <a href="/" className="text-sm text-gray-400">← Back to App</a>
         </div>
 
-        {/* CREATE ACCOUNT */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8">
           <h2 className="text-lg font-bold mb-4">Create Fake Account</h2>
 
@@ -158,7 +154,7 @@ export default function AdminPage() {
             />
             <input
               type="text"
-              placeholder="Display Name (e.g. Chioma)"
+              placeholder="Display Name"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3"
@@ -219,7 +215,6 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* LIST OF ACCOUNTS */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
           <h2 className="text-lg font-bold mb-4">All Accounts ({accounts.length})</h2>
           <div className="space-y-3 max-h-[500px] overflow-y-auto">
@@ -232,7 +227,7 @@ export default function AdminPage() {
                     acc.username?.[0]?.toUpperCase()
                   )}
                 </div>
-                <div className="flex-1">
+                <div>
                   <p className="font-medium">{acc.display_name || acc.username}</p>
                   <p className="text-xs text-gray-400">@{acc.username} • {acc.role}</p>
                 </div>
@@ -243,4 +238,4 @@ export default function AdminPage() {
       </div>
     </div>
   );
-    }
+                 }
