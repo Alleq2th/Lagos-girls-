@@ -7,6 +7,7 @@ export type Profile = {
   role: "GUY" | "GIRL";
   location: string | null;
   is_premium: boolean;
+  services?: string | null;
 };
 
 export type Post = {
