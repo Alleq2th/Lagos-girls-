@@ -1462,10 +1462,9 @@ export default function Home() {
             {(() => {
               let services: { name: string; price: number; desc?: string }[] = [];
               try {
-                if (selectedUser.services) {
-                  services = typeof selectedUser.services === "string"
-                    ? JSON.parse(selectedUser.services)
-                    : selectedUser.services;
+                const raw = (selectedUser as any).services;
+                if (raw) {
+                  services = typeof raw === "string" ? JSON.parse(raw) : raw;
                 }
               } catch {}
               if (!services.length) return null;
