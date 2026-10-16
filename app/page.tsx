@@ -548,85 +548,142 @@ export default function Home() {
 
   if (view === "terms") {
     return (
-      <div className="min-h-screen bg-black p-5 pb-16">
+      <div className="min-h-screen bg-black p-5 pb-20">
         <div className="max-w-lg mx-auto">
-          <button onClick={() => setView("age")} className="text-pink-500 mb-5 text-sm font-medium">← Back</button>
+          <button onClick={() => setView(session ? "profile" : "auth")} className="text-pink-500 mb-5 text-sm font-medium">← Back</button>
           <h1 className="text-2xl font-bold mb-1">Terms of Service</h1>
-          <p className="text-xs text-gray-500 mb-6">Last updated: October 2026 • Lagos Girls</p>
+          <p className="text-xs text-gray-500 mb-6">Last updated: October 2026 • Lagos Girls Platform</p>
 
-          <div className="text-[13px] text-gray-300 space-y-5 leading-relaxed">
+          <div className="text-[13px] text-gray-300 space-y-6 leading-relaxed">
             <section>
-              <h2 className="font-bold text-white text-[14px] mb-1.5">1. Age Requirement</h2>
-              <p>You must be at least 18 years old to access or use Lagos Girls. By creating an account or using the platform, you confirm that you are 18 years of age or older. We reserve the right to terminate any account that violates this requirement.</p>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">1. Acceptance of Terms</h2>
+              <p>By accessing, browsing, registering for, or using the Lagos Girls platform (the “Service”), you acknowledge that you have read, understood, and agree to be bound by these Terms of Service (“Terms”). If you do not agree to these Terms, you must not use the Service. These Terms constitute a legally binding agreement between you and the operators of Lagos Girls.</p>
             </section>
 
             <section>
-              <h2 className="font-bold text-white text-[14px] mb-1.5">2. Nature of the Platform</h2>
-              <p>Lagos Girls is an adult digital entertainment platform. All profiles, images, videos, stories, messages, and “services” displayed on the platform are provided for entertainment, fantasy, and digital content purposes only.</p>
-              <p className="mt-2">The individuals shown (including their names, photos, videos, and likenesses) are presented for adult entertainment. Users are purchasing access to digital content, private media, and fantasy interactions. The platform does not arrange, facilitate, or guarantee any real-world physical meetings, sexual services, or in-person encounters.</p>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">2. Age Requirement and Eligibility</h2>
+              <p>You must be at least eighteen (18) years of age to access or use Lagos Girls. By creating an account or using the platform, you represent and warrant that you are 18 years of age or older and have the legal capacity to enter into this agreement. We reserve the right to request proof of age at any time and to terminate any account that violates this requirement without notice or refund.</p>
             </section>
 
             <section>
-              <h2 className="font-bold text-white text-[14px] mb-1.5">3. Likenesses and Content</h2>
-              <p>Content on Lagos Girls may include real photographs, videos, or digital representations and likenesses. By using the platform you acknowledge that:</p>
-              <ul className="list-disc pl-5 mt-2 space-y-1">
-                <li>You are paying for digital content and entertainment only.</li>
-                <li>Any “services” listed (video calls, private chat, custom content, parties, etc.) are digital or fantasy offerings unless explicitly stated otherwise by the individual content creator in a manner permitted by law.</li>
-                <li>The platform and its operators do not control or guarantee the real-world identity, availability, or actions of any person whose likeness appears on the site.</li>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">3. Description of the Service</h2>
+              <p>Lagos Girls is an adult-oriented digital entertainment platform that allows users to view content, interact with profiles, unlock private media, purchase digital services, and engage in messaging. The Service is intended solely for adult entertainment, fantasy, and digital content consumption.</p>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">4. Nature of Content and Likenesses</h2>
+              <p>All profiles, photographs, videos, stories, usernames, display names, biographies, and other materials on the platform are provided for entertainment purposes. Users acknowledge that content may include real or stylized likenesses of individuals. By using the Service you expressly agree that:</p>
+              <ul className="list-disc pl-5 mt-2 space-y-1.5">
+                <li>You are purchasing access to digital content, private media, and fantasy interactions only.</li>
+                <li>The platform does not operate as an escort agency, dating agency, or physical meeting service.</li>
+                <li>Any reference to “services” (including but not limited to video calls, private chats, custom content, parties, or similar offerings) refers to digital or entertainment offerings unless independently arranged outside the platform in a manner permitted by applicable law.</li>
+                <li>The operators of Lagos Girls do not control, verify, or guarantee the real-world identity, location, availability, or conduct of any person whose likeness appears on the Service.</li>
               </ul>
             </section>
 
             <section>
-              <h2 className="font-bold text-white text-[14px] mb-1.5">4. Payments and Refunds</h2>
-              <p>All payments made on Lagos Girls — including Premium membership, unlocking private content, purchasing services, or any other digital purchase — are final and non-refundable, except where required by applicable law.</p>
-              <p className="mt-2">Once digital content is unlocked or a service is marked as delivered, no refund will be issued. Chargebacks or payment disputes initiated in bad faith may result in permanent account termination.</p>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">5. No Guarantee of Real-World Interaction</h2>
+              <p>Lagos Girls does not arrange, facilitate, promote, or guarantee any in-person meetings, physical encounters, or real-world sexual services. Any expectation of physical contact or offline meetings is solely the responsibility of the users involved and is outside the scope of the Service. The platform and its operators shall have no liability arising from any offline interaction between users.</p>
             </section>
 
             <section>
-              <h2 className="font-bold text-white text-[14px] mb-1.5">5. User Conduct</h2>
-              <p>You agree not to:</p>
-              <ul className="list-disc pl-5 mt-2 space-y-1">
-                <li>Upload, share, or request any content involving anyone under 18.</li>
-                <li>Harass, threaten, or blackmail other users or content creators.</li>
-                <li>Use the platform for illegal activities of any kind.</li>
-                <li>Attempt to scrape, copy, or redistribute content without permission.</li>
-                <li>Impersonate others or create fake accounts for malicious purposes.</li>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">6. Account Registration</h2>
+              <p>To access certain features you must create an account. You agree to provide accurate information and to keep your login credentials confidential. You are solely responsible for all activity that occurs under your account. We reserve the right to refuse registration or to terminate accounts at our sole discretion.</p>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">7. Payments, Fees, and Refund Policy</h2>
+              <p>Certain features of the Service require payment, including but not limited to Premium membership, unlocking private content, and purchasing listed services. All prices are displayed in Nigerian Naira (₦) unless otherwise stated.</p>
+              <p className="mt-2">ALL PAYMENTS ARE FINAL AND NON-REFUNDABLE. Once a digital product is unlocked, a service is marked as delivered, or Premium access is activated, no refund will be provided except where mandatory under applicable consumer protection law. Initiating a chargeback or payment dispute without first contacting support may result in immediate and permanent account termination.</p>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">8. Premium Membership</h2>
+              <p>Premium membership grants access to additional features such as messaging. Premium status is personal to your account and may not be transferred. We reserve the right to modify Premium benefits or pricing with reasonable notice.</p>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">9. User Conduct and Prohibited Activities</h2>
+              <p>You agree that you will not:</p>
+              <ul className="list-disc pl-5 mt-2 space-y-1.5">
+                <li>Upload, request, or share any content involving anyone under the age of 18.</li>
+                <li>Engage in harassment, threats, blackmail, stalking, or non-consensual sharing of private information.</li>
+                <li>Use the Service for any illegal purpose under Nigerian law or the laws of your jurisdiction.</li>
+                <li>Attempt to reverse-engineer, scrape, crawl, or extract data from the platform.</li>
+                <li>Impersonate any person or entity or misrepresent your affiliation.</li>
+                <li>Interfere with or disrupt the integrity or performance of the Service.</li>
+                <li>Circumvent any paywall, access control, or payment system.</li>
               </ul>
             </section>
 
             <section>
-              <h2 className="font-bold text-white text-[14px] mb-1.5">6. Content License</h2>
-              <p>By uploading any photo, video, or other content, you grant Lagos Girls a non-exclusive, worldwide, royalty-free license to display, distribute, and promote that content on the platform and related marketing channels.</p>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">10. Content Ownership and License</h2>
+              <p>By uploading any content to Lagos Girls, you grant the platform a non-exclusive, worldwide, royalty-free, transferable license to use, display, reproduce, distribute, and promote such content in connection with the Service and its marketing. You represent that you own or have the necessary rights to the content you upload.</p>
             </section>
 
             <section>
-              <h2 className="font-bold text-white text-[14px] mb-1.5">7. Limitation of Liability</h2>
-              <p>To the maximum extent permitted by law, Lagos Girls, its operators, and affiliates shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits or data, arising from your use of the platform or any content or interactions on it.</p>
-              <p className="mt-2">The platform is provided “as is”. We do not guarantee uninterrupted access, the accuracy of any profile information, or the outcome of any interaction between users.</p>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">11. Intellectual Property</h2>
+              <p>The Lagos Girls name, logo, design, and all related materials are the property of the platform operators. You may not use them without prior written permission.</p>
             </section>
 
             <section>
-              <h2 className="font-bold text-white text-[14px] mb-1.5">8. Account Termination</h2>
-              <p>We reserve the right to suspend or permanently terminate any account at our sole discretion, with or without notice, for violation of these Terms or for any other reason we deem appropriate.</p>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">12. Third-Party Services</h2>
+              <p>The Service may integrate with third-party payment processors, hosting providers, and other services. Your use of those services is subject to their respective terms. We are not responsible for the actions or policies of third parties.</p>
             </section>
 
             <section>
-              <h2 className="font-bold text-white text-[14px] mb-1.5">9. Privacy</h2>
-              <p>We collect basic account information (username, optional email, profile data) and usage data necessary to operate the service. We do not sell your personal information to third parties. Payment information is handled by the payment providers you use.</p>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">13. Disclaimer of Warranties</h2>
+              <p>THE SERVICE IS PROVIDED ON AN “AS IS” AND “AS AVAILABLE” BASIS WITHOUT WARRANTIES OF ANY KIND, WHETHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT. WE DO NOT WARRANT THAT THE SERVICE WILL BE UNINTERRUPTED, ERROR-FREE, SECURE, OR FREE OF VIRUSES.</p>
             </section>
 
             <section>
-              <h2 className="font-bold text-white text-[14px] mb-1.5">10. Changes to These Terms</h2>
-              <p>We may update these Terms from time to time. Continued use of the platform after changes constitutes acceptance of the updated Terms.</p>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">14. Limitation of Liability</h2>
+              <p>TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL LAGOS GIRLS, ITS OPERATORS, AFFILIATES, OFFICERS, DIRECTORS, EMPLOYEES, OR AGENTS BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, OR ANY LOSS OF PROFITS, REVENUE, DATA, OR GOODWILL, ARISING OUT OF OR RELATED TO YOUR USE OF THE SERVICE, WHETHER BASED ON WARRANTY, CONTRACT, TORT (INCLUDING NEGLIGENCE), OR ANY OTHER LEGAL THEORY, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.</p>
+              <p className="mt-2">OUR TOTAL AGGREGATE LIABILITY FOR ANY CLAIMS ARISING OUT OF OR RELATED TO THESE TERMS OR THE SERVICE SHALL NOT EXCEED THE AMOUNT YOU PAID TO US IN THE TWELVE (12) MONTHS PRECEDING THE CLAIM, OR ONE THOUSAND NAIRA (₦1,000), WHICHEVER IS GREATER.</p>
             </section>
 
             <section>
-              <h2 className="font-bold text-white text-[14px] mb-1.5">11. Governing Law</h2>
-              <p>These Terms are governed by the laws of the Federal Republic of Nigeria. Any disputes shall be subject to the exclusive jurisdiction of the courts in Nigeria.</p>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">15. Indemnification</h2>
+              <p>You agree to indemnify, defend, and hold harmless Lagos Girls and its operators from and against any claims, liabilities, damages, losses, and expenses (including reasonable legal fees) arising out of or related to your use of the Service, your content, your violation of these Terms, or your violation of any rights of another person.</p>
             </section>
 
-            <section className="pt-2 border-t border-zinc-800">
-              <p className="text-gray-400">By creating an account, logging in, or continuing to use Lagos Girls, you confirm that you have read, understood, and agree to be bound by these Terms of Service.</p>
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">16. Account Suspension and Termination</h2>
+              <p>We may suspend or terminate your access to the Service at any time, with or without cause or notice, including for violation of these Terms, suspected fraud, chargebacks, or any conduct we deem harmful to the platform or other users. Upon termination, your right to use the Service ceases immediately. Provisions that by their nature should survive termination shall survive.</p>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">17. Privacy</h2>
+              <p>We collect information necessary to operate the Service, including account details, profile information, and usage data. We do not sell personal information to third parties for their marketing purposes. Payment data is processed by third-party payment providers under their own privacy policies.</p>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">18. Modifications to the Service and Terms</h2>
+              <p>We reserve the right to modify, suspend, or discontinue the Service (or any part of it) at any time. We may also update these Terms from time to time. Continued use of the Service after changes are posted constitutes acceptance of the revised Terms.</p>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">19. Governing Law and Dispute Resolution</h2>
+              <p>These Terms shall be governed by and construed in accordance with the laws of the Federal Republic of Nigeria, without regard to conflict of law principles. Any dispute arising out of or relating to these Terms or the Service shall be subject to the exclusive jurisdiction of the courts located in Nigeria.</p>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">20. Severability</h2>
+              <p>If any provision of these Terms is held to be invalid or unenforceable, the remaining provisions shall continue in full force and effect.</p>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">21. Entire Agreement</h2>
+              <p>These Terms constitute the entire agreement between you and Lagos Girls regarding the Service and supersede all prior agreements and understandings.</p>
+            </section>
+
+            <section>
+              <h2 className="font-bold text-white text-[14px] mb-1.5">22. Contact</h2>
+              <p>For questions about these Terms, you may contact the platform through the available support channels within the application.</p>
+            </section>
+
+            <section className="pt-3 border-t border-zinc-800">
+              <p className="text-gray-400 font-medium">By creating an account, checking the agreement box, logging in, or continuing to use Lagos Girls, you acknowledge that you have had the opportunity to read these Terms of Service in full and that you agree to be legally bound by them.</p>
             </section>
           </div>
         </div>
@@ -673,7 +730,16 @@ export default function Home() {
 
             <label className="flex items-start gap-3 text-sm text-gray-300">
               <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-1" />
-              <span>I confirm I am 18+ and agree to the Terms</span>
+              <span>
+                I confirm I am 18+ and agree to the{" "}
+                <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); setView("terms"); }}
+                  className="text-pink-500 underline font-medium"
+                >
+                  Terms of Service
+                </button>
+              </span>
             </label>
 
             {message && <p className="text-center text-sm text-pink-400">{message}</p>}
@@ -1352,51 +1418,119 @@ export default function Home() {
         )}
 
         {view === "user" && selectedUser && (
-          <div className="p-4">
-            <button onClick={() => setView("feed")} className="text-sm text-gray-400 mb-4">← Back</button>
-            <div className="flex items-center gap-4 mb-6">
-              <div className="w-20 h-20 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-2xl font-bold">
-                {selectedUser.avatar_url ? <img src={selectedUser.avatar_url} className="w-full h-full object-cover" alt="" /> : selectedUser.username[0].toUpperCase()}
-              </div>
-              <div>
-                <h2 className="text-xl font-bold">{selectedUser.display_name || selectedUser.username}</h2>
-                <p className="text-gray-400 text-sm">@{selectedUser.username}</p>
-                <p className="text-xs text-pink-500">{selectedUser.role}</p>
-              </div>
-            </div>
-            {selectedUser.bio && <p className="text-gray-300 mb-2">{selectedUser.bio}</p>}
-            {selectedUser.location && <p className="text-sm text-gray-500 mb-4">📍 {selectedUser.location}</p>}
+          <div className="pb-10">
+            <div className="px-4 pt-3">
+              <button onClick={() => setView("feed")} className="text-[13px] text-gray-400 mb-4 font-medium">← Back</button>
 
-            {profile?.is_premium && selectedUser.role === "GIRL" && (
-              <button onClick={() => startChat(selectedUser.id)} className="w-full bg-pink-600 hover:bg-pink-700 py-3 rounded-xl font-semibold mb-6">
-                Message
-              </button>
-            )}
-
-            <h3 className="font-bold mb-3">Public Posts</h3>
-            <div className="grid grid-cols-3 gap-1 mb-8">
-              {userPosts.map((p) => (
-                <div key={p.id} className="aspect-square bg-zinc-900 overflow-hidden">
-                  <img src={p.media_url} className="w-full h-full object-cover" alt="" />
+              <div className="flex items-start gap-4">
+                <div className="w-[86px] h-[86px] rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-3xl font-bold ring-2 ring-zinc-700 shrink-0">
+                  {selectedUser.avatar_url ? (
+                    <img src={selectedUser.avatar_url} className="w-full h-full object-cover" alt="" />
+                  ) : (
+                    selectedUser.username[0].toUpperCase()
+                  )}
                 </div>
-              ))}
+                <div className="flex-1 min-w-0 pt-1">
+                  <h2 className="text-[20px] font-bold leading-tight truncate">
+                    {selectedUser.display_name || selectedUser.username}
+                  </h2>
+                  <p className="text-[13px] text-gray-400 mt-0.5">@{selectedUser.username}</p>
+                  <span className="inline-block text-[11px] font-medium text-pink-500 bg-pink-500/10 px-2 py-0.5 rounded-full mt-1.5">
+                    {selectedUser.role}
+                  </span>
+                </div>
+              </div>
+
+              {selectedUser.bio && (
+                <p className="text-[13.5px] text-gray-200 mt-4 leading-relaxed">{selectedUser.bio}</p>
+              )}
+              {selectedUser.location && (
+                <p className="text-[12.5px] text-gray-500 mt-1.5">📍 {selectedUser.location}</p>
+              )}
+
+              {profile?.is_premium && selectedUser.role === "GIRL" && (
+                <button
+                  onClick={() => startChat(selectedUser.id)}
+                  className="w-full bg-pink-600 hover:bg-pink-500 py-3 rounded-xl font-semibold mt-4 text-[14px]"
+                >
+                  Message
+                </button>
+              )}
             </div>
 
+            {/* Services */}
+            {(() => {
+              let services: { name: string; price: number; desc?: string }[] = [];
+              try {
+                if (selectedUser.services) {
+                  services = typeof selectedUser.services === "string"
+                    ? JSON.parse(selectedUser.services)
+                    : selectedUser.services;
+                }
+              } catch {}
+              if (!services.length) return null;
+              return (
+                <div className="mt-6 border-t border-zinc-900">
+                  <div className="px-4 py-3">
+                    <h3 className="font-semibold text-[14px]">Services</h3>
+                  </div>
+                  <div className="px-4 space-y-2 pb-2">
+                    {services.map((s, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center justify-between bg-zinc-900/80 border border-zinc-800 rounded-xl px-4 py-3"
+                      >
+                        <div>
+                          <p className="font-medium text-[14px]">{s.name}</p>
+                          {s.desc && <p className="text-[12px] text-gray-500 mt-0.5">{s.desc}</p>}
+                        </div>
+                        <div className="text-right">
+                          <p className="text-pink-400 font-bold text-[14px]">₦{Number(s.price).toLocaleString()}</p>
+                          <button className="text-[11px] text-pink-500 font-medium mt-0.5">Request</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Public Posts */}
+            <div className="mt-4 border-t border-zinc-900">
+              <div className="px-4 py-3">
+                <h3 className="font-semibold text-[14px]">Posts</h3>
+              </div>
+              {userPosts.length === 0 ? (
+                <p className="text-center text-gray-500 text-[13px] py-10">No public posts</p>
+              ) : (
+                <div className="grid grid-cols-3 gap-[2px]">
+                  {userPosts.map((p) => (
+                    <div key={p.id} className="aspect-square bg-zinc-900 overflow-hidden">
+                      <img src={p.media_url} className="w-full h-full object-cover" alt="" />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Private Content */}
             {userPrivate.length > 0 && (
-              <>
-                <h3 className="font-bold mb-3 text-pink-500">Private Content 🔒</h3>
-                <div className="grid grid-cols-2 gap-3">
+              <div className="mt-4 border-t border-zinc-900">
+                <div className="px-4 py-3">
+                  <h3 className="font-semibold text-[14px] text-pink-500">Private Content 🔒</h3>
+                </div>
+                <div className="px-4 grid grid-cols-2 gap-3 pb-4">
                   {userPrivate.map((m) => (
                     <div key={m.id} className="relative rounded-xl overflow-hidden bg-zinc-900">
                       <img src={m.media_url} className="w-full aspect-[3/4] object-cover locked" alt="" />
-                      <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center">
-                        <p className="font-medium text-sm mb-1">{m.title}</p>
-                        <p className="text-pink-400 font-bold">₦{m.price.toLocaleString()}</p>
+                      <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center p-2">
+                        <p className="font-medium text-[13px] mb-1 text-center">{m.title}</p>
+                        <p className="text-pink-400 font-bold text-[14px]">₦{m.price.toLocaleString()}</p>
                       </div>
                     </div>
                   ))}
                 </div>
-              </>
+              </div>
             )}
           </div>
         )}
