@@ -17,6 +17,7 @@ export default function Home() {
   const [myPosts, setMyPosts] = useState<any[]>([]);
   const [savedPosts, setSavedPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
   const [feedLoading, setFeedLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [commentText, setCommentText] = useState<{ [key: string]: string }>({});
@@ -57,26 +58,37 @@ export default function Home() {
   const avatarRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session) {
-        ensureProfile(session.user);
-        setView("feed");
-      }
-    });
+    let mounted = true;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return;
       setSession(session);
       if (session) {
         ensureProfile(session.user);
         setView("feed");
       } else {
+        setView("auth");
+      }
+      setAuthLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+      setSession(session);
+      if (session) {
+        ensureProfile(session.user);
+        if (event === "SIGNED_IN") setView("feed");
+      } else {
         setProfile(null);
         setView("auth");
       }
+      setAuthLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -273,8 +285,8 @@ export default function Home() {
     const post = posts.find((p) => p.id === postId);
     if (!post) return;
 
-    // Optimistic update for instant feedback
     const wasLiked = post.liked_by_me;
+    // Optimistic UI
     setPosts((prev) =>
       prev.map((p) =>
         p.id === postId
@@ -287,10 +299,34 @@ export default function Home() {
       )
     );
 
-    if (wasLiked) {
-      await supabase.from("likes").delete().eq("post_id", postId).eq("user_id", session.user.id);
-    } else {
-      await supabase.from("likes").insert({ post_id: postId, user_id: session.user.id });
+    try {
+      if (wasLiked) {
+        const { error } = await supabase
+          .from("likes")
+          .delete()
+          .eq("post_id", postId)
+          .eq("user_id", session.user.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("likes")
+          .insert({ post_id: postId, user_id: session.user.id });
+        if (error) throw error;
+      }
+    } catch (e) {
+      // Revert optimistic update on failure
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                liked_by_me: wasLiked,
+                likes_count: wasLiked ? (p.likes_count || 0) + 1 : Math.max(0, (p.likes_count || 0) - 1),
+              }
+            : p
+        )
+      );
+      console.error("Like failed:", e);
     }
   }
 
@@ -299,27 +335,39 @@ export default function Home() {
     const post = posts.find((p) => p.id === postId);
     if (!post) return;
 
-    // Optimistic update
     const wasSaved = post.saved_by_me;
     setPosts((prev) =>
       prev.map((p) => (p.id === postId ? { ...p, saved_by_me: !wasSaved } : p))
     );
 
-    if (wasSaved) {
-      await supabase.from("saves").delete().eq("post_id", postId).eq("user_id", session.user.id);
-    } else {
-      await supabase.from("saves").insert({ post_id: postId, user_id: session.user.id });
+    try {
+      if (wasSaved) {
+        await supabase.from("saves").delete().eq("post_id", postId).eq("user_id", session.user.id);
+      } else {
+        await supabase.from("saves").insert({ post_id: postId, user_id: session.user.id });
+      }
+    } catch (e) {
+      setPosts((prev) =>
+        prev.map((p) => (p.id === postId ? { ...p, saved_by_me: wasSaved } : p))
+      );
+      console.error("Save failed:", e);
     }
   }
 
   async function postComment(postId: string) {
     if (!session || !commentText[postId]?.trim()) return;
-    await supabase.from("comments").insert({
+    const text = commentText[postId].trim();
+    setCommentText({ ...commentText, [postId]: "" });
+    const { error } = await supabase.from("comments").insert({
       post_id: postId,
       user_id: session.user.id,
-      content: commentText[postId],
+      content: text,
     });
-    setCommentText({ ...commentText, [postId]: "" });
+    if (error) {
+      console.error("Comment failed:", error);
+      setCommentText({ ...commentText, [postId]: text });
+      return;
+    }
     loadComments(postId);
   }
 
@@ -495,7 +543,7 @@ export default function Home() {
       avatar_url = data.publicUrl;
     }
 
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from("profiles")
       .update({
         display_name: displayName,
@@ -503,12 +551,24 @@ export default function Home() {
         location,
         avatar_url,
       })
-      .eq("id", session.user.id);
+      .eq("id", session.user.id)
+      .select()
+      .maybeSingle();
 
-    if (error) setMessage(error.message);
-    else {
+    if (error) {
+      setMessage(error.message);
+    } else {
+      // Immediately update local state so avatar shows right away
+      if (updated) {
+        setProfile(updated);
+      } else {
+        setProfile((prev) =>
+          prev
+            ? { ...prev, display_name: displayName, bio, location, avatar_url }
+            : prev
+        );
+      }
       setMessage("Profile updated!");
-      ensureProfile(session.user);
       setAvatarFile(null);
       setView("profile");
     }
@@ -748,6 +808,15 @@ export default function Home() {
             </section>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // ========== AUTH LOADING ==========
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="w-10 h-10 border-2 border-pink-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -1403,6 +1472,37 @@ export default function Home() {
                 </button>
               </div>
             </div>
+
+            {/* Own Services */}
+            {(() => {
+              let services: { name: string; price: number; desc?: string }[] = [];
+              try {
+                const raw = (profile as any).services;
+                if (raw) services = typeof raw === "string" ? JSON.parse(raw) : raw;
+              } catch {}
+              if (!services.length) return null;
+              return (
+                <div className="mt-6 border-t border-zinc-900">
+                  <div className="px-4 py-3">
+                    <h3 className="font-semibold text-[14px]">My Services</h3>
+                  </div>
+                  <div className="px-4 space-y-2 pb-2">
+                    {services.map((s, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center justify-between bg-zinc-900/80 border border-zinc-800 rounded-xl px-4 py-3"
+                      >
+                        <div>
+                          <p className="font-medium text-[14px]">{s.name}</p>
+                          {s.desc && <p className="text-[12px] text-gray-500 mt-0.5">{s.desc}</p>}
+                        </div>
+                        <p className="text-pink-400 font-bold text-[14px]">₦{Number(s.price).toLocaleString()}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* My Posts Grid */}
             <div className="mt-6 border-t border-zinc-900">
