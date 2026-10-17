@@ -313,7 +313,7 @@ export default function Home() {
           .insert({ post_id: postId, user_id: session.user.id });
         if (error) throw error;
       }
-    } catch (e) {
+    } catch (e: any) {
       // Revert optimistic update on failure
       setPosts((prev) =>
         prev.map((p) =>
@@ -326,6 +326,7 @@ export default function Home() {
             : p
         )
       );
+      setMessage("Like failed: " + (e?.message || "permission error"));
       console.error("Like failed:", e);
     }
   }
@@ -366,6 +367,7 @@ export default function Home() {
     if (error) {
       console.error("Comment failed:", error);
       setCommentText({ ...commentText, [postId]: text });
+      setMessage("Comment failed: " + error.message);
       return;
     }
     loadComments(postId);
@@ -925,6 +927,12 @@ export default function Home() {
       </header>
 
       <main className="max-w-lg mx-auto">
+        {message && (
+          <div className="mx-4 mt-3 px-4 py-2.5 bg-zinc-900 border border-pink-500/40 rounded-xl text-[13px] text-pink-400 text-center">
+            {message}
+            <button onClick={() => setMessage("")} className="ml-2 text-gray-500">✕</button>
+          </div>
+        )}
         {/* ========== FEED ========== */}
         {view === "feed" && (
           <div>
