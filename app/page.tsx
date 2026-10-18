@@ -1566,8 +1566,8 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Own Services — editable for GIRL accounts */}
-            {profile.role === "GIRL" && (
+            {/* Own Services — girls (and anyone) can manage from profile */}
+            {(
               <div className="mt-6 border-t border-zinc-900">
                 <div className="px-4 py-3 flex items-center justify-between">
                   <h3 className="font-semibold text-[14px]">My Services</h3>
@@ -1662,7 +1662,22 @@ export default function Home() {
                 <div className="grid grid-cols-3 gap-[2px]">
                   {myPosts.map((p) => (
                     <div key={p.id} className="relative aspect-square bg-zinc-900 overflow-hidden group">
-                      <img src={p.media_url} className="w-full h-full object-cover" alt="" />
+                      {p.media_type === "video" ? (
+                        <video
+                          src={p.media_url}
+                          className="w-full h-full object-cover"
+                          muted
+                          playsInline
+                          preload="metadata"
+                        />
+                      ) : (
+                        <img src={p.media_url} className="w-full h-full object-cover" alt="" />
+                      )}
+                      {p.media_type === "video" && (
+                        <span className="absolute bottom-1 left-1 text-[10px] bg-black/70 px-1.5 py-0.5 rounded text-white">
+                          ▶
+                        </span>
+                      )}
                       <button
                         onClick={() => deleteMyPost(p.id)}
                         className="absolute top-1.5 right-1.5 bg-black/70 text-[11px] w-6 h-6 flex items-center justify-center rounded-full text-red-400 opacity-80"
@@ -1818,8 +1833,15 @@ export default function Home() {
               ) : (
                 <div className="grid grid-cols-3 gap-[2px]">
                   {userPosts.map((p) => (
-                    <div key={p.id} className="aspect-square bg-zinc-900 overflow-hidden">
-                      <img src={p.media_url} className="w-full h-full object-cover" alt="" />
+                    <div key={p.id} className="relative aspect-square bg-zinc-900 overflow-hidden">
+                      {p.media_type === "video" ? (
+                        <video src={p.media_url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+                      ) : (
+                        <img src={p.media_url} className="w-full h-full object-cover" alt="" />
+                      )}
+                      {p.media_type === "video" && (
+                        <span className="absolute bottom-1 left-1 text-[10px] bg-black/70 px-1.5 py-0.5 rounded text-white">▶</span>
+                      )}
                     </div>
                   ))}
                 </div>
