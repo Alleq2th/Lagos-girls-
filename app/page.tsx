@@ -54,6 +54,13 @@ export default function Home() {
   const [price, setPrice] = useState(2000);
   const [title, setTitle] = useState("");
 
+  // Own services editor (for GIRL accounts)
+  const [myServices, setMyServices] = useState<{ name: string; price: number; desc?: string }[]>([]);
+  const [newServiceName, setNewServiceName] = useState("");
+  const [newServicePrice, setNewServicePrice] = useState(5000);
+  const [newServiceDesc, setNewServiceDesc] = useState("");
+  const [savingServices, setSavingServices] = useState(false);
+
   const fileRef = useRef<HTMLInputElement>(null);
   const avatarRef = useRef<HTMLInputElement>(null);
 
@@ -105,9 +112,9 @@ export default function Home() {
   }, [view]);
 
   async function ensureProfile(user: any) {
-    if (!user?.id) return;
+    if (!user?.id) return null;
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
@@ -118,10 +125,16 @@ export default function Home() {
         setDisplayName(data.display_name || "");
         setBio(data.bio || "");
         setLocation(data.location || "");
+        try {
+          const raw = (data as any).services;
+          setMyServices(raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : []);
+        } catch {
+          setMyServices([]);
+        }
         return data;
       }
 
-      // Profile missing — create one
+      // Profile missing — create one in the database (required for likes/comments)
       const username =
         user.user_metadata?.username ||
         user.email?.split("@")[0] ||
@@ -135,9 +148,10 @@ export default function Home() {
         is_premium: false,
       };
 
+      // Use upsert so it works even if a race creates it first
       const { data: created, error: insertError } = await supabase
         .from("profiles")
-        .insert(newProfile)
+        .upsert(newProfile, { onConflict: "id" })
         .select()
         .maybeSingle();
 
@@ -146,13 +160,16 @@ export default function Home() {
         setDisplayName(created.display_name || "");
         setBio(created.bio || "");
         setLocation(created.location || "");
+        setMyServices([]);
         return created;
       }
 
-      // Last resort: set a minimal local profile so UI is never blank
-      if (error || insertError) {
-        console.error("ensureProfile error:", error || insertError);
+      if (insertError) {
+        console.error("ensureProfile insert error:", insertError);
+        setMessage("Profile setup failed: " + insertError.message);
       }
+
+      // Still set local state so UI is not blank, but likes will fail until profile exists in DB
       const fallback = {
         id: user.id,
         username,
@@ -164,7 +181,7 @@ export default function Home() {
         is_premium: false,
       };
       setProfile(fallback as any);
-      return fallback;
+      return null;
     } catch (e) {
       console.error("ensureProfile exception:", e);
       const fallback = {
@@ -178,6 +195,7 @@ export default function Home() {
         is_premium: false,
       };
       setProfile(fallback as any);
+      return null;
     }
   }
 
@@ -285,6 +303,13 @@ export default function Home() {
     const post = posts.find((p) => p.id === postId);
     if (!post) return;
 
+    // Make sure profile exists in DB (FK requires it)
+    const prof = await ensureProfile(session.user);
+    if (!prof) {
+      setMessage("Like failed: your profile is missing. Try logging out and back in.");
+      return;
+    }
+
     const wasLiked = post.liked_by_me;
     // Optimistic UI
     setPosts((prev) =>
@@ -358,6 +383,13 @@ export default function Home() {
   async function postComment(postId: string) {
     if (!session || !commentText[postId]?.trim()) return;
     const text = commentText[postId].trim();
+
+    const prof = await ensureProfile(session.user);
+    if (!prof) {
+      setMessage("Comment failed: your profile is missing. Try logging out and back in.");
+      return;
+    }
+
     setCommentText({ ...commentText, [postId]: "" });
     const { error } = await supabase.from("comments").insert({
       post_id: postId,
@@ -583,6 +615,47 @@ export default function Home() {
     if (selected.length > 10) return setMessage("Maximum 10 files");
     setFiles(selected);
     setPreviews(selected.map((file) => URL.createObjectURL(file)));
+  }
+
+  async function saveMyServices(list: { name: string; price: number; desc?: string }[]) {
+    if (!session) return;
+    setSavingServices(true);
+    const { data, error } = await supabase
+      .from("profiles")
+      .update({ services: JSON.stringify(list) })
+      .eq("id", session.user.id)
+      .select()
+      .maybeSingle();
+    if (error) {
+      setMessage("Services save failed: " + error.message);
+    } else {
+      setMyServices(list);
+      if (data) setProfile(data);
+      setMessage("Services saved");
+      setTimeout(() => setMessage(""), 2000);
+    }
+    setSavingServices(false);
+  }
+
+  function addMyService() {
+    if (!newServiceName.trim() || !newServicePrice) return;
+    const next = [
+      ...myServices,
+      {
+        name: newServiceName.trim(),
+        price: Number(newServicePrice),
+        desc: newServiceDesc.trim() || undefined,
+      },
+    ];
+    setNewServiceName("");
+    setNewServicePrice(5000);
+    setNewServiceDesc("");
+    saveMyServices(next);
+  }
+
+  function removeMyService(index: number) {
+    const next = myServices.filter((_, i) => i !== index);
+    saveMyServices(next);
   }
 
   async function uploadFile(file: File) {
@@ -1273,11 +1346,23 @@ export default function Home() {
 
             {previews.length > 0 && (
               <div className="grid grid-cols-3 gap-2">
-                {previews.map((src, i) => (
-                  <div key={i} className="aspect-square rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800">
-                    <img src={src} className="w-full h-full object-cover" alt="" />
-                  </div>
-                ))}
+                {previews.map((src, i) => {
+                  const isVideo = files[i]?.type?.startsWith("video/");
+                  return (
+                    <div key={i} className="aspect-square rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800 relative">
+                      {isVideo ? (
+                        <video src={src} className="w-full h-full object-cover" muted playsInline />
+                      ) : (
+                        <img src={src} className="w-full h-full object-cover" alt="" />
+                      )}
+                      {isVideo && (
+                        <span className="absolute bottom-1 right-1 text-[10px] bg-black/70 px-1.5 py-0.5 rounded text-white">
+                          VIDEO
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -1481,36 +1566,80 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Own Services */}
-            {(() => {
-              let services: { name: string; price: number; desc?: string }[] = [];
-              try {
-                const raw = (profile as any).services;
-                if (raw) services = typeof raw === "string" ? JSON.parse(raw) : raw;
-              } catch {}
-              if (!services.length) return null;
-              return (
-                <div className="mt-6 border-t border-zinc-900">
-                  <div className="px-4 py-3">
-                    <h3 className="font-semibold text-[14px]">My Services</h3>
-                  </div>
-                  <div className="px-4 space-y-2 pb-2">
-                    {services.map((s, i) => (
-                      <div
-                        key={i}
-                        className="flex items-center justify-between bg-zinc-900/80 border border-zinc-800 rounded-xl px-4 py-3"
-                      >
-                        <div>
-                          <p className="font-medium text-[14px]">{s.name}</p>
-                          {s.desc && <p className="text-[12px] text-gray-500 mt-0.5">{s.desc}</p>}
-                        </div>
-                        <p className="text-pink-400 font-bold text-[14px]">₦{Number(s.price).toLocaleString()}</p>
-                      </div>
-                    ))}
-                  </div>
+            {/* Own Services — editable for GIRL accounts */}
+            {profile.role === "GIRL" && (
+              <div className="mt-6 border-t border-zinc-900">
+                <div className="px-4 py-3 flex items-center justify-between">
+                  <h3 className="font-semibold text-[14px]">My Services</h3>
+                  {savingServices && <span className="text-[11px] text-gray-500">Saving...</span>}
                 </div>
-              );
-            })()}
+
+                <div className="px-4 space-y-2 pb-2">
+                  {myServices.map((s, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between bg-zinc-900/80 border border-zinc-800 rounded-xl px-4 py-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-[14px]">{s.name}</p>
+                        {s.desc && <p className="text-[12px] text-gray-500 mt-0.5">{s.desc}</p>}
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <p className="text-pink-400 font-bold text-[14px]">₦{Number(s.price).toLocaleString()}</p>
+                        <button
+                          onClick={() => removeMyService(i)}
+                          className="text-red-400 text-[12px] font-medium"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {myServices.length === 0 && (
+                    <p className="text-[13px] text-gray-500 py-2">
+                      No services yet. Add Video Call, Custom Video, etc. below.
+                    </p>
+                  )}
+                </div>
+
+                {/* Add service form */}
+                <div className="px-4 pb-4 space-y-2 border-t border-zinc-900/50 pt-3 mt-1">
+                  <p className="text-[12px] text-gray-400 font-medium">Add a service</p>
+                  <input
+                    type="text"
+                    placeholder="Service name (e.g. Video Call)"
+                    value={newServiceName}
+                    onChange={(e) => setNewServiceName(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-[13px]"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Description (optional)"
+                    value={newServiceDesc}
+                    onChange={(e) => setNewServiceDesc(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-[13px]"
+                  />
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-[13px]">₦</span>
+                    <input
+                      type="number"
+                      placeholder="Price"
+                      value={newServicePrice}
+                      onChange={(e) => setNewServicePrice(Number(e.target.value))}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-8 pr-4 py-2.5 text-[13px]"
+                    />
+                  </div>
+                  <button
+                    onClick={addMyService}
+                    disabled={!newServiceName.trim() || savingServices}
+                    className="w-full bg-pink-600 hover:bg-pink-500 disabled:opacity-40 py-2.5 rounded-xl text-[13px] font-semibold"
+                  >
+                    Add Service
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* My Posts Grid */}
             <div className="mt-6 border-t border-zinc-900">
