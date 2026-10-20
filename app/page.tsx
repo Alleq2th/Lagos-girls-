@@ -54,6 +54,8 @@ export default function Home() {
   const [userSearch, setUserSearch] = useState("");
   const [searchResults, setSearchResults] = useState<Profile[]>([]);
   const [viewingPost, setViewingPost] = useState<any | null>(null);
+  const [callModal, setCallModal] = useState<null | "voice" | "video">(null);
+  const [reelPaused, setReelPaused] = useState<Record<string, boolean>>({});
 
   // Auth
   const [email, setEmail] = useState("");
@@ -1055,9 +1057,12 @@ export default function Home() {
       {/* TOP BAR — Instagram style */}
       {showTopBar && (
         <header className="sticky top-0 z-50 bg-black/95 backdrop-blur-md border-b border-zinc-900">
-          <div className="max-w-lg mx-auto px-4 h-[52px] flex items-center justify-between">
-            <h1 className="text-[22px] font-bold tracking-tight text-pink-500">Lagos Girls</h1>
-            <div className="flex items-center gap-4">
+          <div className="max-w-lg mx-auto px-4 h-[52px] grid grid-cols-3 items-center">
+            <div />
+            <h1 className="text-[20px] font-bold tracking-tight text-pink-500 text-center">
+              Lagos Girls
+            </h1>
+            <div className="flex items-center justify-end">
               <button
                 onClick={() => setView("messages")}
                 className={`${view === "messages" ? "text-pink-500" : "text-white"}`}
@@ -1072,13 +1077,17 @@ export default function Home() {
         </header>
       )}
 
+      {/* Global toast — always on top of chat/reels */}
+      {message && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[60] w-[min(92%,28rem)] px-4 py-3 bg-zinc-900 border border-pink-500/50 rounded-xl text-[13px] text-pink-300 text-center shadow-xl">
+          {message}
+          <button onClick={() => setMessage("")} className="ml-2 text-gray-400">
+            ✕
+          </button>
+        </div>
+      )}
+
       <main className="max-w-lg mx-auto">
-        {message && (
-          <div className="mx-4 mt-3 px-4 py-2.5 bg-zinc-900 border border-pink-500/40 rounded-xl text-[13px] text-pink-400 text-center">
-            {message}
-            <button onClick={() => setMessage("")} className="ml-2 text-gray-500">✕</button>
-          </div>
-        )}
         {/* ========== FEED ========== */}
         {view === "feed" && (
           <div>
@@ -1470,17 +1479,18 @@ export default function Home() {
 
         {/* ========== MESSAGES ========== */}
         {view === "messages" && (
-          <div className="p-4">
-            <h2 className="text-[18px] font-bold mb-3">Messages</h2>
+          <div className="px-0 pt-2">
+            <div className="px-4 flex items-center justify-between mb-3">
+              <h2 className="text-[18px] font-bold">{profile?.username || "Messages"}</h2>
+            </div>
 
-            {/* Search people to message */}
-            <div className="mb-4">
+            <div className="px-4 mb-3">
               <input
                 type="text"
-                placeholder="Search by name or username..."
+                placeholder="Search"
                 value={userSearch}
                 onChange={(e) => searchUsers(e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-[14px] placeholder:text-gray-500"
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-[14px] placeholder:text-gray-500"
               />
               {searchResults.length > 0 && (
                 <div className="mt-2 bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
@@ -1490,23 +1500,22 @@ export default function Home() {
                       onClick={() => {
                         setUserSearch("");
                         setSearchResults([]);
-                        if (profile?.is_premium) {
-                          startChat(u.id);
-                        } else {
-                          openUserProfile(u.id);
-                        }
+                        if (profile?.is_premium) startChat(u.id);
+                        else openUserProfile(u.id);
                       }}
                       className="flex items-center gap-3 p-3 border-b border-zinc-800 last:border-0 cursor-pointer active:bg-zinc-800"
                     >
-                      <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center font-bold shrink-0 text-sm">
+                      <div className="w-11 h-11 rounded-full bg-zinc-800 overflow-hidden shrink-0">
                         {u.avatar_url ? (
                           <img src={u.avatar_url} className="w-full h-full object-cover" alt="" />
                         ) : (
-                          (u.username || "?")[0].toUpperCase()
+                          <div className="w-full h-full flex items-center justify-center font-bold text-sm">
+                            {(u.username || "?")[0].toUpperCase()}
+                          </div>
                         )}
                       </div>
                       <div className="min-w-0">
-                        <p className="font-medium text-[14px] truncate">{u.display_name || u.username}</p>
+                        <p className="font-semibold text-[14px] truncate">{u.display_name || u.username}</p>
                         <p className="text-[12px] text-gray-500 truncate">@{u.username}</p>
                       </div>
                     </div>
@@ -1516,9 +1525,9 @@ export default function Home() {
             </div>
 
             {!profile?.is_premium && (
-              <div className="bg-zinc-900/80 border border-pink-500/20 rounded-2xl p-6 mb-6 text-center">
+              <div className="mx-4 bg-zinc-900/80 border border-pink-500/20 rounded-2xl p-5 mb-4 text-center">
                 <p className="text-[15px] mb-1 font-medium">Premium only</p>
-                <p className="text-[13px] text-gray-400 mb-4">Unlock messaging to chat with girls</p>
+                <p className="text-[13px] text-gray-400 mb-3">Unlock messaging to chat with girls</p>
                 <button
                   onClick={becomePremium}
                   className="bg-pink-600 hover:bg-pink-500 px-6 py-2.5 rounded-xl font-semibold text-[14px]"
@@ -1527,13 +1536,16 @@ export default function Home() {
                 </button>
               </div>
             )}
+
+            <p className="px-4 text-[13px] font-semibold text-gray-300 mb-1">Messages</p>
+
             {conversations.length === 0 ? (
-              <div className="text-center py-16">
-                <p className="text-gray-500 text-[15px]">No conversations yet</p>
-                <p className="text-gray-600 text-[13px] mt-1">Search above or open someone’s profile</p>
+              <div className="text-center py-16 px-4">
+                <p className="text-gray-500 text-[15px]">No messages yet</p>
+                <p className="text-gray-600 text-[13px] mt-1">Search or open a profile to start</p>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div>
                 {conversations.map((conv) => {
                   const other = conv.guy_id === session.user.id ? conv.girl : conv.guy;
                   return (
@@ -1544,18 +1556,22 @@ export default function Home() {
                         loadChatMessages(conv.id);
                         setView("chat");
                       }}
-                      className="flex items-center gap-3 p-3 bg-zinc-900/60 rounded-xl cursor-pointer active:bg-zinc-800 transition"
+                      className="flex items-center gap-3 px-4 py-3 active:bg-zinc-900 cursor-pointer"
                     >
-                      <div className="w-12 h-12 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center font-bold shrink-0">
+                      <div className="w-14 h-14 rounded-full bg-zinc-800 overflow-hidden shrink-0">
                         {other?.avatar_url ? (
                           <img src={other.avatar_url} className="w-full h-full object-cover" alt="" />
                         ) : (
-                          other?.username?.[0]?.toUpperCase()
+                          <div className="w-full h-full flex items-center justify-center font-bold">
+                            {other?.username?.[0]?.toUpperCase()}
+                          </div>
                         )}
                       </div>
-                      <div className="min-w-0">
-                        <p className="font-medium text-[14px] truncate">{other?.display_name || other?.username}</p>
-                        <p className="text-[12px] text-gray-500 truncate">@{other?.username}</p>
+                      <div className="min-w-0 flex-1 border-b border-zinc-900 pb-3">
+                        <p className="font-semibold text-[14px] truncate">
+                          {other?.display_name || other?.username}
+                        </p>
+                        <p className="text-[13px] text-gray-500 truncate">Tap to open chat</p>
                       </div>
                     </div>
                   );
@@ -1572,7 +1588,7 @@ export default function Home() {
               <button onClick={() => setView("messages")} className="text-pink-500 text-[15px]">←</button>
               <span className="font-medium text-[15px] flex-1">Chat</span>
               <button
-                onClick={() => setMessage("Voice call — ₦10,000. Payment coming soon.")}
+                onClick={() => setCallModal("voice")}
                 className="text-white p-1"
                 title="Voice call ₦10,000"
               >
@@ -1581,7 +1597,7 @@ export default function Home() {
                 </svg>
               </button>
               <button
-                onClick={() => setMessage("Video call — ₦20,000. Payment coming soon.")}
+                onClick={() => setCallModal("video")}
                 className="text-white p-1"
                 title="Video call ₦20,000"
               >
@@ -2077,7 +2093,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* ========== REELS — videos only full screen ========== */}
+        {/* ========== REELS — 9:16 videos, pause + save ========== */}
         {view === "reels" && (
           <div className="fixed inset-0 z-30 bg-black overflow-y-scroll snap-y snap-mandatory">
             {posts.filter((p) => p.media_type === "video").length === 0 ? (
@@ -2087,48 +2103,120 @@ export default function Home() {
             ) : (
               posts
                 .filter((p) => p.media_type === "video")
-                .map((post) => (
-                  <div
-                    key={post.id}
-                    className="h-[100dvh] w-full snap-start relative flex items-center justify-center bg-black"
-                  >
-                    <video
-                      src={post.media_url}
-                      className="absolute inset-0 w-full h-full object-cover"
-                      loop
-                      playsInline
-                      muted
-                      autoPlay
-                    />
-                    <div className="absolute bottom-24 left-0 right-16 px-4 z-10">
-                      <button
-                        onClick={() => openUserProfile(post.user_id)}
-                        className="font-semibold text-[14px] mb-1"
-                      >
-                        @{post.profiles?.username}
-                      </button>
-                      {post.caption && (
-                        <p className="text-[13px] text-gray-200 line-clamp-2">{post.caption}</p>
-                      )}
+                .map((post) => {
+                  const paused = !!reelPaused[post.id];
+                  return (
+                    <div
+                      key={post.id}
+                      className="h-[100dvh] w-full snap-start relative flex items-center justify-center bg-black"
+                    >
+                      {/* 9:16 frame */}
+                      <div className="relative h-full w-full max-w-[min(100%,calc(100dvh*9/16))] mx-auto bg-black">
+                        <video
+                          src={post.media_url}
+                          className="absolute inset-0 w-full h-full object-cover"
+                          loop
+                          playsInline
+                          muted
+                          autoPlay
+                          ref={(el) => {
+                            if (!el) return;
+                            if (paused) el.pause();
+                            else el.play().catch(() => {});
+                          }}
+                          onClick={() =>
+                            setReelPaused((prev) => ({
+                              ...prev,
+                              [post.id]: !prev[post.id],
+                            }))
+                          }
+                        />
+                        {paused && (
+                          <button
+                            className="absolute inset-0 flex items-center justify-center z-10"
+                            onClick={() =>
+                              setReelPaused((prev) => ({ ...prev, [post.id]: false }))
+                            }
+                          >
+                            <span className="w-16 h-16 rounded-full bg-black/50 flex items-center justify-center text-3xl">
+                              ▶
+                            </span>
+                          </button>
+                        )}
+                        <div className="absolute bottom-24 left-0 right-16 px-4 z-10 pointer-events-none">
+                          <button
+                            onClick={() => openUserProfile(post.user_id)}
+                            className="font-semibold text-[14px] mb-1 pointer-events-auto"
+                          >
+                            @{post.profiles?.username}
+                          </button>
+                          {post.caption && (
+                            <p className="text-[13px] text-gray-200 line-clamp-2">{post.caption}</p>
+                          )}
+                        </div>
+                        <div className="absolute bottom-28 right-3 flex flex-col items-center gap-5 z-10">
+                          <button onClick={() => toggleLike(post.id)} className="flex flex-col items-center">
+                            <span className="text-[22px]">{post.liked_by_me ? "❤️" : "🤍"}</span>
+                            <span className="text-[11px]">{post.likes_count || 0}</span>
+                          </button>
+                          <button
+                            onClick={() =>
+                              setShowComments((s) => ({ ...s, [post.id]: !s[post.id] }))
+                            }
+                            className="flex flex-col items-center"
+                          >
+                            <span className="text-[22px]">💬</span>
+                            <span className="text-[11px]">{post.comments_count || 0}</span>
+                          </button>
+                          <button onClick={() => toggleSave(post.id)} className="flex flex-col items-center">
+                            <span className="text-[22px]">{post.saved_by_me ? "🔖" : "📑"}</span>
+                            <span className="text-[11px]">Save</span>
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <div className="absolute bottom-28 right-3 flex flex-col items-center gap-5 z-10">
-                      <button onClick={() => toggleLike(post.id)} className="flex flex-col items-center">
-                        <span className="text-[22px]">{post.liked_by_me ? "❤️" : "🤍"}</span>
-                        <span className="text-[11px]">{post.likes_count || 0}</span>
-                      </button>
-                      <button
-                        onClick={() =>
-                          setShowComments((s) => ({ ...s, [post.id]: !s[post.id] }))
-                        }
-                        className="flex flex-col items-center"
-                      >
-                        <span className="text-[22px]">💬</span>
-                        <span className="text-[11px]">{post.comments_count || 0}</span>
-                      </button>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
             )}
+          </div>
+        )}
+
+        {/* Call paywall modal */}
+        {callModal && (
+          <div className="fixed inset-0 z-[70] bg-black/80 flex items-end sm:items-center justify-center p-4">
+            <div className="w-full max-w-sm bg-zinc-900 border border-zinc-700 rounded-2xl p-5">
+              <h3 className="text-[17px] font-semibold mb-1">
+                {callModal === "voice" ? "Voice call" : "Video call"}
+              </h3>
+              <p className="text-[13px] text-gray-400 mb-4">
+                {callModal === "voice"
+                  ? "Talk live for ₦10,000 per session."
+                  : "Face-to-face video for ₦20,000 per session."}
+              </p>
+              <p className="text-[12px] text-gray-500 mb-4">
+                Payment link is not connected yet. After you pay offline, mark as paid and we will enable live calls.
+              </p>
+              <button
+                onClick={() => {
+                  setMessage(
+                    callModal === "voice"
+                      ? "Voice call request noted — ₦10,000. Complete payment to connect."
+                      : "Video call request noted — ₦20,000. Complete payment to connect."
+                  );
+                  setCallModal(null);
+                }}
+                className="w-full bg-pink-600 py-3 rounded-xl font-semibold text-[14px] mb-2"
+              >
+                Request {callModal === "voice" ? "Voice" : "Video"} call — ₦
+                {callModal === "voice" ? "10,000" : "20,000"}
+              </button>
+              <button
+                onClick={() => setCallModal(null)}
+                className="w-full bg-zinc-800 py-3 rounded-xl text-[14px] text-gray-300"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         )}
 
