@@ -63,12 +63,20 @@ export default function Home() {
   const [unlockedIds, setUnlockedIds] = useState<string[]>([]);
   const [readMap, setReadMap] = useState<Record<string, string>>({});
   const [followingIds, setFollowingIds] = useState<string[]>([]);
+  const [paymentInstructions, setPaymentInstructions] = useState(
+    "Pay to:\nOPay / Moniepoint — ask the girl in chat after you book.\nAfter payment, message: I have paid for [service]."
+  );
+  const [seenStoryUsers, setSeenStoryUsers] = useState<string[]>([]);
+  const [premiumWall, setPremiumWall] = useState(false);
+  const [followerCount, setFollowerCount] = useState(0);
+  const [followingCountProfile, setFollowingCountProfile] = useState(0);
 
   const PAYMENT_KEY = "lagos_payment_instructions";
   const UNLOCKS_KEY = "lagos_pending_unlocks";
   const READ_KEY = "lagos_chat_read";
   const UNLOCKED_KEY = "lagos_unlocked_media";
   const FOLLOW_KEY = "lagos_following";
+  const SEEN_STORIES_KEY = "lagos_seen_stories";
 
   function isFollowing(userId: string) {
     return followingIds.includes(userId);
@@ -158,18 +166,83 @@ export default function Home() {
   }
 
   function getPaymentInstructions() {
-    if (typeof window === "undefined") return "";
-    return (
-      localStorage.getItem(PAYMENT_KEY) ||
-      "Pay to:\nOPay / Moniepoint — ask the girl in chat for the account after you book.\nAfter payment, message: I have paid for [service]."
-    );
+    return paymentInstructions;
+  }
+
+  async function loadPaymentInstructions() {
+    try {
+      const { data } = await supabase
+        .from("app_settings")
+        .select("value")
+        .eq("key", "payment_instructions")
+        .maybeSingle();
+      if (data?.value) {
+        setPaymentInstructions(data.value);
+        try {
+          localStorage.setItem(PAYMENT_KEY, data.value);
+        } catch {}
+        return;
+      }
+    } catch {}
+    try {
+      const local = localStorage.getItem(PAYMENT_KEY);
+      if (local) setPaymentInstructions(local);
+    } catch {}
+  }
+
+  async function loadMyUnlocks(userId: string) {
+    try {
+      const { data } = await supabase
+        .from("media_unlocks")
+        .select("media_id")
+        .eq("user_id", userId);
+      if (data) {
+        const ids = data.map((r: any) => r.media_id);
+        setUnlockedIds(ids);
+        try {
+          localStorage.setItem(UNLOCKED_KEY, JSON.stringify(ids));
+        } catch {}
+        return;
+      }
+    } catch {}
+    try {
+      setUnlockedIds(JSON.parse(localStorage.getItem(UNLOCKED_KEY) || "[]"));
+    } catch {}
+  }
+
+  async function loadFollowCounts(userId: string) {
+    try {
+      const [followers, following] = await Promise.all([
+        supabase
+          .from("follows")
+          .select("*", { count: "exact", head: true })
+          .eq("following_id", userId),
+        supabase
+          .from("follows")
+          .select("*", { count: "exact", head: true })
+          .eq("follower_id", userId),
+      ]);
+      setFollowerCount(followers.count || 0);
+      setFollowingCountProfile(following.count || 0);
+    } catch {
+      setFollowerCount(0);
+      setFollowingCountProfile(followingIds.length);
+    }
+  }
+
+  function requirePremium(action?: string) {
+    if (profile?.is_premium) return true;
+    setPremiumWall(true);
+    if (action) setMessage(action);
+    return false;
   }
 
   function openPaySheet(title: string, amount?: number, note?: string) {
     setPaySheet({ title, amount, note });
   }
 
-  function submitPaidRequest(label: string, note?: string) {
+  async function submitPaidRequest(label: string, note?: string, mediaId?: string) {
+    // Local queue for admin browser fallback
     try {
       const list = JSON.parse(localStorage.getItem(UNLOCKS_KEY) || "[]");
       list.unshift({
@@ -178,12 +251,39 @@ export default function Home() {
         note: note || "",
         at: new Date().toISOString(),
         user: profile?.username || session?.user?.id,
+        media_id: mediaId,
       });
       localStorage.setItem(UNLOCKS_KEY, JSON.stringify(list.slice(0, 100)));
     } catch {}
-    setMessage("Payment marked — wait for confirmation. Admin will unlock after verify.");
+
+    // DB request so admin sees it from any device
+    if (session?.user?.id) {
+      try {
+        await supabase.from("unlock_requests").insert({
+          user_id: session.user.id,
+          media_id: mediaId || null,
+          label,
+          note: note || "",
+          status: "pending",
+        });
+      } catch {}
+    }
+
+    setMessage("Payment marked — wait for confirmation. Admin unlocks after verify.");
     setPaySheet(null);
     setUnlockTarget(null);
+  }
+
+  function markStorySeen(userId: string) {
+    if (!userId) return;
+    setSeenStoryUsers((prev) => {
+      if (prev.includes(userId)) return prev;
+      const next = [...prev, userId];
+      try {
+        localStorage.setItem(SEEN_STORIES_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
   }
 
   function markChatRead(convId: string) {
@@ -238,12 +338,15 @@ export default function Home() {
   useEffect(() => {
     let mounted = true;
 
+    loadPaymentInstructions();
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!mounted) return;
       setSession(session);
       if (session) {
         ensureProfile(session.user);
         loadFollowing(session.user.id);
+        loadMyUnlocks(session.user.id);
         setView("feed");
       } else {
         setView("auth");
@@ -257,6 +360,7 @@ export default function Home() {
       if (session) {
         ensureProfile(session.user);
         loadFollowing(session.user.id);
+        loadMyUnlocks(session.user.id);
         if (event === "SIGNED_IN") setView("feed");
       } else {
         setProfile(null);
@@ -277,6 +381,7 @@ export default function Home() {
       setReadMap(JSON.parse(localStorage.getItem(READ_KEY) || "{}"));
       setUnlockedIds(JSON.parse(localStorage.getItem(UNLOCKED_KEY) || "[]"));
       setFollowingIds(JSON.parse(localStorage.getItem(FOLLOW_KEY) || "[]"));
+      setSeenStoryUsers(JSON.parse(localStorage.getItem(SEEN_STORIES_KEY) || "[]"));
     } catch {}
   }, []);
 
@@ -508,6 +613,7 @@ export default function Home() {
     const { data: userData } = await supabase.from("profiles").select("*").eq("id", userId).single();
     if (!userData) return;
     setSelectedUser(userData);
+    loadFollowCounts(userId);
 
     const { data: postsData } = await supabase.from("posts").select("*").eq("user_id", userId).order("created_at", { ascending: false });
     const { data: privateData } = await supabase.from("private_media").select("*").eq("user_id", userId).order("created_at", { ascending: false });
@@ -663,7 +769,8 @@ export default function Home() {
     if (!session || !profile) return;
 
     if (!profile.is_premium) {
-      return setMessage("Become Premium — ₦5,000 to message and book services");
+      setPremiumWall(true);
+      return;
     }
 
     let { data: existing } = await supabase
@@ -708,7 +815,7 @@ export default function Home() {
   ) {
     if (!session || !profile) return;
     if (!profile.is_premium) {
-      setMessage("Become Premium — ₦5,000 to book services");
+      setPremiumWall(true);
       return;
     }
     const text = `I want to book ${service.name} — ₦${Number(service.price).toLocaleString()}${
@@ -1317,28 +1424,44 @@ export default function Home() {
                 </div>
                 <span className="text-[11px] text-gray-400 font-medium">Your Story</span>
               </div>
-              {stories.map((story) => (
-                <div
-                  key={story.id}
-                  className="flex flex-col items-center gap-1.5 min-w-[72px] cursor-pointer active:opacity-70"
-                  onClick={() => setActiveStory(story)}
-                >
-                  <div className="w-[68px] h-[68px] rounded-full p-[2.5px] bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600">
-                    <div className="w-full h-full rounded-full bg-black p-[2px] overflow-hidden">
-                      {story.profiles?.avatar_url ? (
-                        <img src={story.profiles.avatar_url} className="w-full h-full object-cover rounded-full" alt="" />
-                      ) : (
-                        <div className="w-full h-full rounded-full bg-zinc-800 flex items-center justify-center text-sm font-semibold">
-                          {story.profiles?.username?.[0]?.toUpperCase() || "?"}
-                        </div>
-                      )}
+              {stories.map((story) => {
+                const seen = seenStoryUsers.includes(story.user_id);
+                return (
+                  <div
+                    key={story.id}
+                    className="flex flex-col items-center gap-1.5 min-w-[72px] cursor-pointer active:opacity-70"
+                    onClick={() => {
+                      setActiveStory(story);
+                      markStorySeen(story.user_id);
+                    }}
+                  >
+                    <div
+                      className={`w-[68px] h-[68px] rounded-full p-[2.5px] ${
+                        seen
+                          ? "bg-zinc-600"
+                          : "bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600"
+                      }`}
+                    >
+                      <div className="w-full h-full rounded-full bg-black p-[2px] overflow-hidden">
+                        {story.profiles?.avatar_url ? (
+                          <img
+                            src={story.profiles.avatar_url}
+                            className="w-full h-full object-cover rounded-full"
+                            alt=""
+                          />
+                        ) : (
+                          <div className="w-full h-full rounded-full bg-zinc-800 flex items-center justify-center text-sm font-semibold">
+                            {story.profiles?.username?.[0]?.toUpperCase() || "?"}
+                          </div>
+                        )}
+                      </div>
                     </div>
+                    <span className="text-[11px] text-gray-300 truncate w-[68px] text-center font-medium">
+                      {story.profiles?.username}
+                    </span>
                   </div>
-                  <span className="text-[11px] text-gray-300 truncate w-[68px] text-center font-medium">
-                    {story.profiles?.username}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Active Story Viewer - more controlled size */}
@@ -1560,6 +1683,31 @@ export default function Home() {
                       <span className="font-semibold mr-1.5">{post.profiles?.username}</span>
                       <span className="text-gray-100">{post.caption}</span>
                     </p>
+                  )}
+
+                  {/* Book shortcut — money path from feed */}
+                  {post.profiles?.role === "GIRL" && post.user_id !== session?.user?.id && (
+                    <div className="px-3.5 mt-2 flex gap-2">
+                      <button
+                        onClick={() => {
+                          if (!requirePremium("Become Premium to book services")) return;
+                          requestService(post.user_id, {
+                            name: "Video Call",
+                            price: 15000,
+                            desc: "From feed",
+                          });
+                        }}
+                        className="text-[12px] font-semibold bg-pink-600 px-3 py-1.5 rounded-full"
+                      >
+                        Book
+                      </button>
+                      <button
+                        onClick={() => openUserProfile(post.user_id)}
+                        className="text-[12px] font-medium text-gray-400 px-2 py-1.5"
+                      >
+                        Services
+                      </button>
+                    </div>
                   )}
 
                   {/* View comments link */}
@@ -2209,6 +2357,22 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* Follower counts from follows table */}
+              <div className="flex gap-6 mt-4">
+                <div>
+                  <p className="text-[16px] font-bold">{userPosts.length}</p>
+                  <p className="text-[11px] text-gray-500">Posts</p>
+                </div>
+                <div>
+                  <p className="text-[16px] font-bold">{followerCount}</p>
+                  <p className="text-[11px] text-gray-500">Followers</p>
+                </div>
+                <div>
+                  <p className="text-[16px] font-bold">{followingCountProfile}</p>
+                  <p className="text-[11px] text-gray-500">Following</p>
+                </div>
+              </div>
+
               {selectedUser.bio && (
                 <p className="text-[13.5px] text-gray-200 mt-4 leading-relaxed">{selectedUser.bio}</p>
               )}
@@ -2231,10 +2395,7 @@ export default function Home() {
                   </button>
                   <button
                     onClick={() => {
-                      if (!profile?.is_premium) {
-                        setMessage("Become Premium (₦5,000) to message girls");
-                        return;
-                      }
+                      if (!requirePremium("Become Premium to message")) return;
                       startChat(selectedUser.id);
                     }}
                     className="flex-1 bg-pink-600 hover:bg-pink-500 py-3 rounded-xl font-semibold text-[14px]"
@@ -2609,24 +2770,51 @@ export default function Home() {
                 onClick={() => {
                   submitPaidRequest(
                     `Private: ${unlockTarget.title} ₦${Number(unlockTarget.price).toLocaleString()}`,
-                    `media:${unlockTarget.id}`
+                    `media:${unlockTarget.id}`,
+                    unlockTarget.id
                   );
-                  // Soft unlock on device until admin confirms (money path stays honest via Unlocks tab)
-                  const next = [...unlockedIds, unlockTarget.id];
-                  setUnlockedIds(next);
-                  try {
-                    localStorage.setItem(UNLOCKED_KEY, JSON.stringify(next));
-                  } catch {}
                 }}
                 className="w-full bg-pink-600 py-3 rounded-xl font-semibold text-[14px] mb-2"
               >
-                I&apos;ve paid — unlock
+                I&apos;ve paid — request unlock
               </button>
+              <p className="text-[11px] text-gray-500 text-center mb-2">
+                Content unlocks after admin confirms payment
+              </p>
               <button
                 onClick={() => setUnlockTarget(null)}
                 className="w-full bg-zinc-800 py-3 rounded-xl text-[14px] text-gray-300"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Hard Premium wall */}
+        {premiumWall && (
+          <div className="fixed inset-0 z-[90] bg-black/90 flex items-end sm:items-center justify-center p-4">
+            <div className="w-full max-w-sm bg-zinc-900 border border-pink-500/40 rounded-2xl p-6 text-center">
+              <p className="text-[22px] mb-2">★</p>
+              <h3 className="text-[18px] font-bold mb-2">Premium only</h3>
+              <p className="text-[13px] text-gray-400 mb-1">
+                Message girls, book services, and unlock the full experience.
+              </p>
+              <p className="text-pink-400 font-bold text-[20px] mb-5">₦5,000</p>
+              <button
+                onClick={() => {
+                  setPremiumWall(false);
+                  becomePremium();
+                }}
+                className="w-full bg-pink-600 py-3.5 rounded-xl font-semibold text-[15px] mb-2"
+              >
+                Become Premium
+              </button>
+              <button
+                onClick={() => setPremiumWall(false)}
+                className="w-full bg-zinc-800 py-3 rounded-xl text-[14px] text-gray-400"
+              >
+                Not now
               </button>
             </div>
           </div>
