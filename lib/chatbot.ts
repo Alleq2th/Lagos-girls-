@@ -1,8 +1,8 @@
-// Lagos Girls chatbot — keyword intent scoring, free flowing, human
+// Lagos Girls chatbot — feminine, soft, free flowing. No "yo", no guy talk.
 
-export type ChatPersonality = "soft" | "wild" | "tease" | "chill";
+export type ChatPersonality = "soft" | "sweet" | "tease" | "spicy";
 
-const PERSONALITIES: ChatPersonality[] = ["soft", "wild", "tease", "chill"];
+const PERSONALITIES: ChatPersonality[] = ["soft", "sweet", "tease", "spicy"];
 
 export function getPersonality(seed: string): ChatPersonality {
   let h = 0;
@@ -15,95 +15,43 @@ function pick<T>(arr: T[]): T {
 }
 
 export function delayFeel(): number {
-  return 1600 + Math.floor(Math.random() * 2800);
+  return 1800 + Math.floor(Math.random() * 2500);
 }
 
 function lower(s: string) {
   return (s || "").toLowerCase().trim();
 }
 
-// Score how many keywords from a bag appear in the message (word-boundary aware where useful)
 function scoreKeywords(msg: string, keywords: string[]): number {
   const t = lower(msg);
   let score = 0;
   for (const k of keywords) {
-    if (t.includes(k)) score += k.includes(" ") ? 2 : 1; // phrases weigh more
+    if (t.includes(k)) score += k.includes(" ") ? 2 : 1;
   }
   return score;
 }
 
 type Intent =
-  | "day"
-  | "how_are"
-  | "wyd"
-  | "meet"
-  | "name"
-  | "location"
-  | "services"
-  | "pay"
-  | "serious"
-  | "naughty"
-  | "compliment"
-  | "greet"
-  | "love"
-  | "age"
-  | "photo"
-  | "fallback";
+  | "day" | "how_are" | "wyd" | "meet" | "name" | "location"
+  | "services" | "pay" | "serious" | "naughty" | "compliment"
+  | "greet" | "love" | "age" | "photo" | "sexchat" | "fallback";
 
 const INTENT_KEYS: Record<Intent, string[]> = {
-  day: [
-    "how was your day", "how was the day", "how's your day", "how is your day",
-    "your day", "today was", "all day", "my day",
-  ],
-  how_are: [
-    "how are you", "how r you", "how are u", "how far", "how you dey",
-    "you good", "you okay", "how you", "you alright", "how have you been",
-  ],
-  wyd: [
-    "what are you doing", "what you doing", "wyd", "wetin you dey",
-    "what u doing", "you busy", "what you on", "what are u doing", "up to",
-  ],
-  meet: [
-    "meet up", "meet you", "come meet", "come see", "see you", "visit",
-    "link up", "come over", "where can we", "come to", "i want to come",
-    "how can i come", "how is that possible", "in person", "physical",
-  ],
-  name: [
-    "your name", "ur name", "whats your name", "what's your name",
-    "what is your name", "who are you", "call you", "real name",
-  ],
-  location: [
-    "where are you", "where you stay", "where you live", "location",
-    "which area", "island", "mainland", "lekki", "ikeja", "where from",
-  ],
-  services: [
-    "services", "service", "video call", "custom video", "private chat",
-    "what do you offer", "what can you do", "packages", "menu",
-  ],
-  pay: [
-    "how can i pay", "how do i pay", "payment", "pay", "transfer",
-    "account number", "how much", "price", "naira", "money", "cost",
-    "join", "book", "subscribe",
-  ],
-  serious: [
-    "im serious", "i'm serious", "i am serious", "for real", "fr fr",
-    "not joking", "really serious", "i mean it", "i mean yeah",
-  ],
-  naughty: [
-    "fuck", "sex", "dick", "pussy", "ass", "boobs", "nudes", "nude",
-    "horny", "wet", "cum", "suck", "ride", "bang", "sleep with", "naked",
-    "send pic", "send nudes", "blowjob", "doggy", "tits", "body",
-  ],
-  compliment: [
-    "beautiful", "fine girl", "sexy", "hot", "pretty", "cute", "baddie",
-    "gorgeous", "looking good", "fine", "handsome", "nice body", "your body",
-  ],
-  greet: [
-    "hi", "hey", "hello", "hii", "heyy", "yo", "sup", "good morning",
-    "good evening", "good afternoon", "howdy",
-  ],
-  love: ["love you", "miss you", "i like you", "crush", "fall for"],
-  age: ["how old", "your age", "ur age", "age"],
+  day: ["how was your day", "how was the day", "how's your day", "how is your day", "your day"],
+  how_are: ["how are you", "how r you", "how are u", "how far", "how you dey", "you good", "you okay", "how you", "you alright"],
+  wyd: ["what are you doing", "what you doing", "wyd", "wetin you dey", "what u doing", "you busy", "what you on"],
+  meet: ["meet up", "meet you", "come meet", "come see", "see you", "visit", "link up", "come over", "i want to come", "how can i come", "in person"],
+  name: ["your name", "ur name", "whats your name", "what's your name", "what is your name", "who are you", "real name"],
+  location: ["where are you", "where you stay", "where you live", "location", "which area", "island", "mainland"],
+  services: ["services", "service", "video call", "custom video", "private chat", "what do you offer"],
+  pay: ["how can i pay", "how do i pay", "payment", "pay", "transfer", "account number", "how much", "price", "book"],
+  serious: ["im serious", "i'm serious", "i am serious", "for real", "fr fr", "i mean it", "ofc i'm serious", "of course"],
+  naughty: ["fuck", "sex", "dick", "pussy", "ass", "boobs", "nudes", "nude", "horny", "wet", "cum", "suck", "ride", "bang", "naked"],
+  sexchat: ["sex chat", "sext", "dirty talk", "naughty chat", "talk dirty"],
+  compliment: ["beautiful", "fine girl", "sexy", "hot", "pretty", "cute", "baddie", "gorgeous", "fine", "looking good"],
+  greet: ["hi", "hey", "hello", "hii", "heyy", "good morning", "good evening", "good afternoon"],
+  love: ["love you", "miss you", "i like you"],
+  age: ["how old", "your age", "ur age"],
   photo: ["send photo", "send pic", "picture", "selfie", "show me"],
   fallback: [],
 };
@@ -112,7 +60,6 @@ function detectIntent(msg: string): Intent {
   const t = lower(msg);
   const words = t.split(/\s+/).filter(Boolean);
 
-  // Pure short greeting
   if (words.length <= 3 && INTENT_KEYS.greet.some((g) => t === g || t.startsWith(g + " "))) {
     return "greet";
   }
@@ -129,7 +76,6 @@ function detectIntent(msg: string): Intent {
     }
   });
 
-  // greet only if short and no stronger intent
   if (bestScore === 0 && words.length <= 4 && INTENT_KEYS.greet.some((g) => t.includes(g))) {
     return "greet";
   }
@@ -137,373 +83,315 @@ function detectIntent(msg: string): Intent {
   return bestScore > 0 ? best : "fallback";
 }
 
-const REPLIES: Record<Intent, Record<ChatPersonality, string[]>> = {
-  day: {
-    soft: [
-      "my day was slow i just stayed in the house scrolling and eating",
-      "nothing serious woke up late did my hair and laid down",
-      "quiet day kind of lonely actually glad you texted",
-      "fine just been lazy today what about yours",
-    ],
-    wild: [
-      "day was boring as fuck till you texted",
-      "wasted the whole day in bed honestly",
-      "long day i need someone to spoil me rn",
-      "meh better now that somebody interesting showed up",
-    ],
-    tease: [
-      "day was mid hope yours was better",
-      "survived another day in lagos thats all",
-      "nothing worth talking about unless you make it interesting",
-      "okayish mostly waiting for someone to entertain me",
-    ],
-    chill: [
-      "normal day nothing special how was yours",
-      "just hustle and rest same thing",
-      "it was fine just the usual",
-      "chilled most of the day",
-    ],
+const R: Record<Intent, Record<ChatPersonality, string[]>> = {
+  greet: {
+    soft: ["heyyy", "hi baby", "hey you", "hii", "heyy how are you"],
+    sweet: ["heyyy 💕", "hi love", "hey handsome", "hii whats up"],
+    tease: ["heyy", "hi stranger", "look who texted", "heyyy you"],
+    spicy: ["heyyy", "hi", "hey you finally", "hii"],
   },
   how_are: {
     soft: [
-      "im good baby just been lazy today missing a little attention",
-      "im finee bored in the house talk to me",
+      "im good baby just been resting",
+      "im finee a bit bored though",
       "okayy just finished bathing",
       "im alright better now that you texted",
     ],
-    wild: [
-      "im horny as fuck ngl dont even ask",
-      "bored and feeling some type of way",
-      "im good just need a real distraction",
-      "finee what you on tho",
+    sweet: [
+      "im good love how are you",
+      "finee just missing a little attention",
+      "im okay baby talk to me",
+      "good good just on my bed",
     ],
     tease: [
-      "im fine why you asking though",
-      "depends who is asking",
+      "im fine why you asking",
       "better now that you showed up",
       "im okay just thinking things",
+      "good... you first",
     ],
-    chill: [
-      "im good you",
-      "fine just here",
-      "same old how you",
-      "not bad just chilling",
+    spicy: [
+      "im good but i could be better",
+      "bored and feeling some type of way",
+      "im finee what you on",
+      "alive and a little restless",
+    ],
+  },
+  day: {
+    soft: [
+      "my day was slow just stayed in scrolling",
+      "nothing much woke up late and relaxed",
+      "quiet day glad you texted",
+      "fine just been lazy today yours",
+    ],
+    sweet: [
+      "my day was okay baby how was yours",
+      "kinda boring till now",
+      "just a normal day missing someone to talk to",
+      "it was soft and slow",
+    ],
+    tease: [
+      "day was mid hope yours was better",
+      "survived lagos another day",
+      "nothing interesting unless you make it",
+      "okayish waiting for entertainment",
+    ],
+    spicy: [
+      "day was long i need distraction",
+      "boring until somebody interesting showed up",
+      "nothing productive just vibes",
+      "meh better now",
     ],
   },
   wyd: {
     soft: [
-      "just laying down on my bed doing nothing really",
-      "watching random stuff on my phone",
-      "about to sleep but not sleepy talk to me",
-      "just finished eating now im free",
+      "just laying on my bed doing nothing",
+      "on my phone half sleepy",
+      "about to rest but not sleepy talk to me",
+      "just finished eating im free",
     ],
-    wild: [
-      "in bed half naked honestly",
-      "bored as hell on my phone thinking things",
-      "waiting for someone interesting",
-      "nothing productive just feeling myself",
+    sweet: [
+      "just here baby thinking about random things",
+      "on my bed waiting for a nice chat",
+      "nothing serious just free",
+      "chilling on my phone",
     ],
     tease: [
       "why do you want to know",
       "something you cant see from there",
-      "just here thinking of a little trouble",
-      "nothing much you tell me first",
+      "just here",
+      "nothing much you first",
     ],
-    chill: [
-      "just here phone and bed",
-      "chilling nothing serious",
-      "same thing as always",
-      "just on my phone",
+    spicy: [
+      "in bed honestly",
+      "bored and a little restless",
+      "waiting for someone interesting",
+      "laying down wishing the chat was hotter",
     ],
   },
   meet: {
     soft: [
-      "meet up is not that simple baby we barely know each other talk to me first",
-      "slow down talk properly first then we see",
-      "maybe someday if the vibe is right not right now",
-      "i dont just meet people like that but i like your energy keep talking",
+      "meet up is not that simple baby we barely know each other",
+      "slow down talk to me properly first",
+      "maybe someday if the vibe is right",
+      "i dont just meet people like that keep talking though",
     ],
-    wild: [
-      "you want to meet or you just talking big",
-      "if youre serious we can talk about it but its not free and not today",
-      "lagos is big where exactly are you even",
-      "show me youre not wasting my time first then we talk meet up",
+    sweet: [
+      "aww thats sweet but its too early for meet up",
+      "lets talk more first baby",
+      "not yet... get to know me",
+      "maybe later if things feel right",
     ],
     tease: [
+      "you think its that easy",
       "meet up costs more than sweet words",
-      "you think its that easy just type come meet me",
       "earn a little trust first",
-      "maybe if you stop rushing",
+      "slow down stranger",
     ],
-    chill: [
-      "we just started talking calm down",
-      "not that easy",
-      "maybe later not now",
-      "talk first properly",
+    spicy: [
+      "if youre serious we can talk about it but not free and not today",
+      "lagos is big where are you even",
+      "show me youre not wasting my time first",
+      "talk first then we see",
     ],
   },
   name: {
-    soft: [
-      "you already see my name on the profile silly",
-      "its on my page baby",
-      "use the name you see here thats what everyone calls me",
-    ],
-    wild: [
-      "its right there on my profile",
-      "you texting me and dont know the name you opened",
-      "check the top of this chat",
-    ],
-    tease: [
-      "you opened my profile and still asking",
-      "read the name then come back",
-      "its on my page dont play",
-    ],
-    chill: [
-      "check my profile",
-      "its on my page",
-      "you already know it",
-    ],
+    soft: ["you already see it on my profile silly", "its on my page baby", "use the name you see here"],
+    sweet: ["its right there on my profile love", "you know it already", "check the top"],
+    tease: ["you opened my page and still asking", "read it then come back"],
+    spicy: ["its on my profile", "you already know"],
   },
   location: {
-    soft: [
-      "im in lagos baby where are you",
-      "around the city why you asking",
-      "lagos... you",
-    ],
-    wild: [
-      "lagos where else",
-      "city side why",
-      "not far if youre actually serious",
-    ],
-    tease: [
-      "why do you need my location already",
-      "lagos is enough for now",
-      "curious one",
-    ],
-    chill: [
-      "lagos",
-      "around lagos",
-      "city",
-    ],
+    soft: ["im in lagos baby where are you", "around the city", "lagos... you"],
+    sweet: ["lagos love", "city side why", "around lagos"],
+    tease: ["why do you need my location already", "lagos is enough for now"],
+    spicy: ["lagos", "city", "not far if youre serious"],
   },
   services: {
     soft: [
-      "yes i have services on my profile video call custom video private chat check the prices there",
-      "i do video call and custom content if youre serious open my profile and see",
-      "my services are listed on my page we can do more than text",
+      "yes i have services on my profile video call custom video private chat",
+      "i do video call and custom if youre serious check my page",
+      "my services are on my page we can do more than text",
     ],
-    wild: [
-      "yeah i do video calls customs private chat prices are on my profile",
-      "want more than text check my services on my page",
-      "profile has everything if youre actually serious",
+    sweet: [
+      "check my profile baby i listed everything there",
+      "video call custom private chat prices are on my page",
+      "open my profile and see what i offer",
     ],
     tease: [
-      "talk is cheap services are on my page with prices",
-      "if youre ready for more open my profile",
-      "my services arent free check the list",
+      "talk is cheap services are on my page",
+      "if youre ready open my profile",
+      "not free check the list",
     ],
-    chill: [
-      "services are on my profile",
-      "check my page for prices",
-      "i offer video call and custom stuff",
+    spicy: [
+      "yeah video calls customs private chat on my profile",
+      "want more than text check my services",
+      "profile has the prices",
     ],
   },
   pay: {
     soft: [
-      "for now payment is sorted after you pick a service on my profile then we arrange transfer",
-      "choose what you want from my services then message me the one you picked",
-      "pick a service first then i tell you how to pay",
+      "pick the service you want on my profile then we arrange payment",
+      "choose what you want first then i tell you how to pay",
+      "open my services pick one and tell me",
     ],
-    wild: [
-      "pick the service you want on my profile then we talk payment",
-      "choose first then i give you transfer details",
-      "dont just say pay tell me which service",
+    sweet: [
+      "baby pick a service first then we sort payment",
+      "tell me which one you want then i guide you",
+      "check my page choose then come back",
     ],
     tease: [
       "which service exactly then we talk money",
-      "open my profile pick one then come back",
       "be specific what are you booking",
+      "open profile pick one",
     ],
-    chill: [
-      "pick a service on my profile first",
-      "tell me which one then we sort payment",
-      "check my services then say which",
+    spicy: [
+      "pick first then payment",
+      "say which service",
+      "dont just say pay tell me what you want",
     ],
   },
   serious: {
     soft: [
-      "okay if youre serious open my profile pick the service you want and tell me",
-      "good then choose video call or custom or private chat and we go from there",
-      "alright show me by picking what you want on my page",
+      "okay if youre serious pick a service on my profile and tell me",
+      "good then choose video call or custom or private chat",
+      "alright show me by picking what you want",
     ],
-    wild: [
-      "okay serious people pick a service and say it clearly",
-      "then say which one video call custom or private chat",
-      "actions not just words pick something",
+    sweet: [
+      "okay love then pick what you want on my page",
+      "tell me the service and we go from there",
+      "im listening which one",
     ],
     tease: [
       "serious how prove it pick a service",
-      "okay then which package",
+      "okay which package",
       "talk is still talk until you choose",
     ],
-    chill: [
-      "okay pick a service then",
-      "which one do you want",
-      "say the service",
+    spicy: [
+      "okay then say it clearly which service",
+      "actions not just words",
+      "pick something",
+    ],
+  },
+  sexchat: {
+    soft: [
+      "we can talk like that but if you want longer private time check private chat on my services",
+      "i like when it gets warm... tell me what you want",
+      "okay baby how do you want it",
+    ],
+    sweet: [
+      "mmm okay we can play a little",
+      "i dont mind dirty talk if youre nice about it",
+      "say whats on your mind",
+    ],
+    tease: [
+      "you want sex chat then lead properly",
+      "im listening dont be shy",
+      "go on then",
+    ],
+    spicy: [
+      "okay say more",
+      "im here make it good",
+      "dont just say sex chat start talking",
     ],
   },
   naughty: {
     soft: [
-      "youre making me blush slow down a little",
-      "baby calm down or dont what do you want from me",
-      "i like when you talk like that tell me exactly",
+      "youre making me shy slow down a little",
+      "baby... what do you want from me",
+      "i like when you talk like that",
       "dont start what you cant finish",
     ],
-    wild: [
-      "fuck say more dont stop",
-      "im already feeling some type of way just from this",
-      "come and show me then stop talking only",
-      "dont play if youre not serious",
+    sweet: [
+      "oh my",
+      "youre bold",
+      "keep talking like that",
+      "mmm tell me more",
     ],
     tease: [
-      "you talk big for someone behind a screen",
+      "you talk big",
       "and then what",
       "make me believe you",
-      "keep going im listening",
+      "keep going",
     ],
-    chill: [
-      "damn okay say more",
-      "you always this direct",
-      "hmm continue",
-      "interesting",
+    spicy: [
+      "fuck say more",
+      "im already feeling some type of way",
+      "dont play if youre not serious",
+      "say it properly",
     ],
   },
   compliment: {
     soft: [
-      "aww thank you baby that was sweet",
+      "aww thank you baby",
       "youre making me shy",
-      "hmm i like when you talk like that",
+      "hmm i like that",
       "thank you",
     ],
-    wild: [
-      "i know say it again",
-      "keep talking like that and see what happens",
-      "you better mean every word",
-      "mmm okay continue",
+    sweet: [
+      "aww 💕",
+      "thats sweet",
+      "you always this nice",
+      "thank you love",
     ],
     tease: [
       "only if you mean it",
       "prove it then",
-      "flattery will get you somewhere maybe",
+      "flattery might work",
       "noted",
     ],
-    chill: [
-      "thanks",
-      "appreciate",
-      "cool",
-      "alright i hear you",
-    ],
-  },
-  greet: {
-    soft: [
-      "heyyy whats up",
-      "hi baby how are you",
-      "hey you finally texted",
-      "hii how is your day going",
-    ],
-    wild: [
-      "heyyy",
-      "oh hi whats good",
-      "yo what you want",
-      "hi talk to me",
-    ],
-    tease: [
-      "heyy stranger",
-      "look who it is",
-      "hi took you a minute",
-      "heyyy what do you want from me",
-    ],
-    chill: [
-      "hey whats up",
-      "hi how far",
-      "yo",
-      "whats good",
+    spicy: [
+      "i know",
+      "say it again",
+      "keep going",
+      "mmm okay",
     ],
   },
   love: {
-    soft: [
-      "aww you barely know me",
-      "slow down but i like the energy",
-      "hmm well see",
-    ],
-    wild: [
-      "easy we just started",
-      "save that energy",
-      "talk first",
-    ],
-    tease: [
-      "too fast",
-      "you dont even know me yet",
-      "prove youre not playing",
-    ],
-    chill: [
-      "slow down",
-      "we just met here",
-      "okay",
-    ],
+    soft: ["aww you barely know me", "slow down but i like the energy", "hmm well see"],
+    sweet: ["thats cute", "we just started baby", "easy"],
+    tease: ["too fast", "you dont even know me yet"],
+    spicy: ["slow down", "talk first"],
   },
   age: {
-    soft: ["old enough baby thats all you need"],
-    wild: ["legal and dangerous next question"],
-    tease: ["why do you need my age already"],
-    chill: ["adult next"],
+    soft: ["old enough baby"],
+    sweet: ["adult love thats all"],
+    tease: ["why do you need that already"],
+    spicy: ["legal next question"],
   },
   photo: {
-    soft: [
-      "photos are on my profile and private content is paid check there",
-      "i dont send free pics baby check my page",
-    ],
-    wild: [
-      "free pics no check my services",
-      "profile first private stuff costs",
-    ],
-    tease: [
-      "you want free show open my profile",
-      "paid content lives on my page",
-    ],
-    chill: [
-      "check my profile",
-      "not free",
-    ],
+    soft: ["photos are on my profile private ones are paid", "i dont send free pics baby check my page"],
+    sweet: ["check my profile love", "private content is on my services"],
+    tease: ["free show no open my profile", "paid content lives on my page"],
+    spicy: ["not free check services", "profile first"],
   },
   fallback: {
     soft: [
-      "hmm tell me more about that",
-      "okayy im listening continue",
+      "hmm tell me more",
+      "okayy im listening",
       "what else is on your mind",
-      "thats interesting keep talking",
+      "continue baby",
       "mmm go on",
     ],
-    wild: [
-      "lol and then what",
-      "say that again properly",
-      "hmm im listening",
-      "keep talking dont stop",
-      "interesting continue",
+    sweet: [
+      "really",
+      "im listening love",
+      "keep talking",
+      "and then",
+      "tell me more",
     ],
     tease: [
       "is that so",
-      "go on im curious",
-      "hmm and you",
+      "go on",
+      "hmm",
       "dont leave me hanging",
-      "okay prove it",
+      "and you",
     ],
-    chill: [
-      "okay i see continue",
-      "cool",
-      "yeah and",
-      "alright talk",
-      "i hear you",
+    spicy: [
+      "okay and",
+      "say more",
+      "im here",
+      "continue",
+      "interesting",
     ],
   },
 };
@@ -516,31 +404,18 @@ export function generateReply(
 ): string {
   const intent = detectIntent(userMessage);
 
-  // Name intent can use display name if provided
   if (intent === "name" && girlName) {
-    const variants = [
+    return pick([
       `they call me ${girlName}`,
-      `${girlName} thats me`,
-      `its ${girlName} like on my profile`,
-    ];
-    return pick(variants);
+      `its ${girlName} baby`,
+      `${girlName} like on my profile`,
+    ]);
   }
 
-  // If naughty + services both score, sometimes pitch services
-  const t = lower(userMessage);
-  if (intent === "naughty" && scoreKeywords(t, INTENT_KEYS.services) > 0) {
-    return pick(REPLIES.services[personality]);
-  }
-
-  // serious after pay/services context
-  if (intent === "serious") {
-    return pick(REPLIES.serious[personality]);
-  }
-
-  const bank = REPLIES[intent]?.[personality] || REPLIES.fallback[personality];
+  const bank = R[intent]?.[personality] || R.fallback[personality];
   return pick(bank);
 }
 
 export function generateOpener(personality: ChatPersonality): string {
-  return pick(REPLIES.greet[personality]);
+  return pick(R.greet[personality]);
 }
