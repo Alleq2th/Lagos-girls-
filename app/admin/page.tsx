@@ -8,11 +8,26 @@ const supabase = createClient(
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhicWF5aGxwc3ZwamZlaGRiem56Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIwMTU1ODYsImV4cCI6MjEwNzU5MTU4Nn0.zjYGcVkXSLq7NmknIwonyMxStzkfPzK-cC_xkC4y-qo"
 );
 
+const ADMIN_PASSWORD = "lagos2025";
+const PAYMENT_KEY = "lagos_payment_instructions";
+const UNLOCKS_KEY = "lagos_pending_unlocks";
+
+const DEFAULT_SERVICES = [
+  { name: "Video Call", price: 15000, desc: "15 minutes" },
+  { name: "Custom Video", price: 25000, desc: "Personalized" },
+  { name: "Private Chat", price: 5000, desc: "1 hour" },
+  { name: "Voice Call", price: 10000, desc: "Live voice" },
+  { name: "Video Call Extended", price: 20000, desc: "30 minutes" },
+];
+
+type Tab = "accounts" | "settings" | "chats" | "unlocks" | "stats";
+
 export default function AdminPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [tab, setTab] = useState<Tab>("accounts");
 
   // Create account
   const [username, setUsername] = useState("");
@@ -22,18 +37,18 @@ export default function AdminPage() {
   const [role, setRole] = useState<"GIRL" | "GUY">("GIRL");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
 
-  // Accounts list
+  // Accounts
   const [accounts, setAccounts] = useState<any[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<any>(null);
   const [accountSearch, setAccountSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<"ALL" | "GIRL" | "GUY">("ALL");
 
-  // Content for selected account
+  // Content
   const [accountPosts, setAccountPosts] = useState<any[]>([]);
   const [accountPrivate, setAccountPrivate] = useState<any[]>([]);
   const [accountStories, setAccountStories] = useState<any[]>([]);
 
-  // Posting as selected account
+  // Posting
   const [caption, setCaption] = useState("");
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState(2000);
@@ -41,37 +56,63 @@ export default function AdminPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
 
-  // Services editor
+  // Services
   const [servicesJson, setServicesJson] = useState("");
   const [servicesMsg, setServicesMsg] = useState("");
+
+  // Settings
+  const [paymentText, setPaymentText] = useState("");
+  const [settingsMsg, setSettingsMsg] = useState("");
+
+  // Chats
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [selectedConv, setSelectedConv] = useState<any>(null);
+  const [convMessages, setConvMessages] = useState<any[]>([]);
+  const [adminReply, setAdminReply] = useState("");
+
+  // Unlocks (local queue until DB table exists)
+  const [pendingUnlocks, setPendingUnlocks] = useState<any[]>([]);
+
+  // Stats
+  const [stats, setStats] = useState({
+    total: 0,
+    girls: 0,
+    guys: 0,
+    premium: 0,
+    posts: 0,
+    messages: 0,
+  });
 
   const avatarRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const ADMIN_PASSWORD = "lagos2025";
-
   useEffect(() => {
-    if (isAuthenticated) loadAccounts();
+    if (isAuthenticated) {
+      loadAccounts();
+      loadStats();
+      loadConversations();
+      const saved = localStorage.getItem(PAYMENT_KEY);
+      setPaymentText(
+        saved ||
+          "Pay to:\nOPay: 0000000000 (Name)\nMoniepoint: 0000000000 (Name)\nCrypto: USDT TRC20 — your_wallet\n\nAfter payment, message the girl: I have paid for [service]."
+      );
+      try {
+        setPendingUnlocks(JSON.parse(localStorage.getItem(UNLOCKS_KEY) || "[]"));
+      } catch {
+        setPendingUnlocks([]);
+      }
+    }
   }, [isAuthenticated]);
 
   useEffect(() => {
     if (selectedAccount) {
       loadAccountContent(selectedAccount.id);
-      // Load services
       try {
         const s = selectedAccount.services
-          ? (typeof selectedAccount.services === "string"
-              ? selectedAccount.services
-              : JSON.stringify(selectedAccount.services, null, 2))
-          : JSON.stringify(
-              [
-                { name: "Video Call", price: 15000, desc: "15 minutes" },
-                { name: "Custom Video", price: 25000, desc: "Personalized" },
-                { name: "Private Chat", price: 5000, desc: "1 hour" },
-              ],
-              null,
-              2
-            );
+          ? typeof selectedAccount.services === "string"
+            ? selectedAccount.services
+            : JSON.stringify(selectedAccount.services, null, 2)
+          : JSON.stringify(DEFAULT_SERVICES, null, 2);
         setServicesJson(s);
       } catch {
         setServicesJson("[]");
@@ -88,28 +129,92 @@ export default function AdminPage() {
     if (data) setAccounts(data);
   }
 
+  async function loadStats() {
+    const { data: profiles } = await supabase.from("profiles").select("id, role, is_premium");
+    const { count: postCount } = await supabase
+      .from("posts")
+      .select("*", { count: "exact", head: true });
+    const { count: msgCount } = await supabase
+      .from("messages")
+      .select("*", { count: "exact", head: true });
+    const list = profiles || [];
+    setStats({
+      total: list.length,
+      girls: list.filter((p) => p.role === "GIRL").length,
+      guys: list.filter((p) => p.role !== "GIRL").length,
+      premium: list.filter((p) => p.is_premium).length,
+      posts: postCount || 0,
+      messages: msgCount || 0,
+    });
+  }
+
   async function loadAccountContent(userId: string) {
     const { data: posts } = await supabase
       .from("posts")
       .select("*")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
-
     const { data: privates } = await supabase
       .from("private_media")
       .select("*")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
-
     const { data: stories } = await supabase
       .from("stories")
       .select("*")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
-
     setAccountPosts(posts || []);
     setAccountPrivate(privates || []);
     setAccountStories(stories || []);
+  }
+
+  async function loadConversations() {
+    const { data } = await supabase
+      .from("conversations")
+      .select(
+        `*,
+        guy:profiles!conversations_guy_id_fkey(id, username, display_name, avatar_url),
+        girl:profiles!conversations_girl_id_fkey(id, username, display_name, avatar_url)`
+      )
+      .order("updated_at", { ascending: false })
+      .limit(50);
+    if (data) setConversations(data);
+    else {
+      // fallback without FK names
+      const { data: plain } = await supabase
+        .from("conversations")
+        .select("*")
+        .order("updated_at", { ascending: false })
+        .limit(50);
+      setConversations(plain || []);
+    }
+  }
+
+  async function openConversation(conv: any) {
+    setSelectedConv(conv);
+    const { data } = await supabase
+      .from("messages")
+      .select("*")
+      .eq("conversation_id", conv.id)
+      .order("created_at", { ascending: true });
+    setConvMessages(data || []);
+  }
+
+  async function sendAdminReply() {
+    if (!adminReply.trim() || !selectedConv) return;
+    const girlId = selectedConv.girl_id;
+    await supabase.from("messages").insert({
+      conversation_id: selectedConv.id,
+      sender_id: girlId,
+      content: adminReply.trim(),
+    });
+    await supabase
+      .from("conversations")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", selectedConv.id);
+    setAdminReply("");
+    openConversation(selectedConv);
   }
 
   function handleLogin() {
@@ -123,22 +228,19 @@ export default function AdminPage() {
 
   async function createFakeAccount() {
     if (!username) return setMessage("Username is required");
-
     setLoading(true);
     setMessage("");
-
     try {
-      const cleanUsername = username.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20);
+      const cleanUsername = username
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "")
+        .slice(0, 20);
       const fakeEmail = `${cleanUsername}${Date.now()}@gmail.com`;
-
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: fakeEmail,
         password: "FakePass123!",
-        options: {
-          data: { username: cleanUsername, role },
-        },
+        options: { data: { username: cleanUsername, role } },
       });
-
       if (authError) throw authError;
       if (!authData.user) throw new Error("Failed to create user");
 
@@ -149,34 +251,37 @@ export default function AdminPage() {
         const { error: uploadError } = await supabase.storage
           .from("avatars")
           .upload(fileName, avatarFile, { upsert: true });
-
         if (!uploadError) {
-          const { data } = supabase.storage.from("avatars").getPublicUrl(fileName);
-          avatar_url = data.publicUrl;
+          const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(fileName);
+          avatar_url = urlData.publicUrl;
         }
       }
+
+      const services =
+        role === "GIRL" ? JSON.stringify(DEFAULT_SERVICES) : null;
 
       const { error: profileError } = await supabase.from("profiles").insert({
         id: authData.user.id,
         username: cleanUsername,
-        display_name: displayName || username,
-        bio: bio || null,
+        display_name: displayName || cleanUsername,
+        bio: bio || "",
         location: location || "Lagos",
         role,
         avatar_url,
+        is_premium: false,
+        services,
       });
-
       if (profileError) throw profileError;
 
-      setMessage(`✅ @${cleanUsername} created!`);
+      setMessage(`Created @${cleanUsername}`);
       setUsername("");
       setDisplayName("");
       setBio("");
       setAvatarFile(null);
-      if (avatarRef.current) avatarRef.current.value = "";
       loadAccounts();
-    } catch (err: any) {
-      setMessage(err.message || "Error creating account");
+      loadStats();
+    } catch (e: any) {
+      setMessage(e.message || "Create failed");
     }
     setLoading(false);
   }
@@ -191,99 +296,185 @@ export default function AdminPage() {
   }
 
   async function handlePostAsAccount() {
-    if (!selectedAccount || files.length === 0) return setMessage("Select files first");
-
+    if (!selectedAccount || files.length === 0) return setMessage("Pick a file");
     setLoading(true);
     setMessage("");
-
     try {
       for (const file of files) {
-        const mediaType = file.type.startsWith("video") ? "video" : "image";
-        const mediaUrl = await uploadFile(file);
-
+        const url = await uploadFile(file);
+        const media_type = file.type.startsWith("video") ? "video" : "image";
         if (postType === "story") {
           await supabase.from("stories").insert({
             user_id: selectedAccount.id,
-            media_url: mediaUrl,
-            media_type: mediaType,
+            media_url: url,
+            media_type,
           });
         } else if (postType === "private") {
           await supabase.from("private_media").insert({
             user_id: selectedAccount.id,
-            title: title || "Private Content",
-            media_url: mediaUrl,
-            media_type: mediaType,
+            media_url: url,
+            media_type,
+            title: title || "Private",
             price,
           });
         } else {
           await supabase.from("posts").insert({
             user_id: selectedAccount.id,
-            caption: caption || null,
-            media_url: mediaUrl,
-            media_type: mediaType,
+            media_url: url,
+            media_type,
+            caption: caption || "",
           });
         }
       }
-
-      setMessage("Content posted successfully!");
-      setFiles([]);
-      setPreviews([]);
+      setMessage("Posted");
       setCaption("");
       setTitle("");
-      if (fileRef.current) fileRef.current.value = "";
+      setFiles([]);
+      setPreviews([]);
       loadAccountContent(selectedAccount.id);
-    } catch (err: any) {
-      setMessage(err.message || "Failed to post");
+    } catch (e: any) {
+      setMessage(e.message || "Post failed");
     }
     setLoading(false);
   }
 
   async function deleteContent(table: string, id: string) {
-    if (!confirm("Delete this content?")) return;
+    if (!confirm("Delete?")) return;
     await supabase.from(table).delete().eq("id", id);
-    loadAccountContent(selectedAccount.id);
-    setMessage("Deleted");
+    if (selectedAccount) loadAccountContent(selectedAccount.id);
   }
 
   async function saveServices() {
-    if (!selectedAccount) return;
     try {
       const parsed = JSON.parse(servicesJson);
-      if (!Array.isArray(parsed)) throw new Error("Must be an array");
       const { error } = await supabase
         .from("profiles")
         .update({ services: JSON.stringify(parsed) })
         .eq("id", selectedAccount.id);
       if (error) throw error;
-      setServicesMsg("Services saved");
       setSelectedAccount({ ...selectedAccount, services: JSON.stringify(parsed) });
-      setTimeout(() => setServicesMsg(""), 2500);
+      setServicesMsg("Saved");
+      loadAccounts();
     } catch (e: any) {
-      setServicesMsg("Error: " + (e.message || "Invalid JSON"));
+      setServicesMsg("Error: " + (e.message || "invalid JSON"));
     }
   }
 
-  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const selected = Array.from(e.target.files || []);
-    setFiles(selected);
-    setPreviews(selected.map((f) => URL.createObjectURL(f)));
+  async function togglePremium(acc: any) {
+    const next = !acc.is_premium;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ is_premium: next })
+      .eq("id", acc.id);
+    if (error) setMessage(error.message);
+    else {
+      setMessage(next ? "Premium ON" : "Premium OFF");
+      if (selectedAccount?.id === acc.id) {
+        setSelectedAccount({ ...selectedAccount, is_premium: next });
+      }
+      loadAccounts();
+      loadStats();
+    }
   }
 
-  // ========== LOGIN SCREEN ==========
+  async function toggleRole(acc: any) {
+    const next = acc.role === "GIRL" ? "GUY" : "GIRL";
+    const update: any = { role: next };
+    if (next === "GIRL" && !acc.services) {
+      update.services = JSON.stringify(DEFAULT_SERVICES);
+    }
+    const { error } = await supabase.from("profiles").update(update).eq("id", acc.id);
+    if (error) setMessage(error.message);
+    else {
+      setMessage(`Role → ${next}`);
+      if (selectedAccount?.id === acc.id) {
+        setSelectedAccount({ ...selectedAccount, ...update });
+      }
+      loadAccounts();
+      loadStats();
+    }
+  }
+
+  async function applyDefaultServices(acc: any) {
+    const { error } = await supabase
+      .from("profiles")
+      .update({ services: JSON.stringify(DEFAULT_SERVICES) })
+      .eq("id", acc.id);
+    if (error) setMessage(error.message);
+    else {
+      setMessage("Default services applied");
+      if (selectedAccount?.id === acc.id) {
+        setSelectedAccount({
+          ...selectedAccount,
+          services: JSON.stringify(DEFAULT_SERVICES),
+        });
+        setServicesJson(JSON.stringify(DEFAULT_SERVICES, null, 2));
+      }
+      loadAccounts();
+    }
+  }
+
+  async function applyDefaultServicesAllGirls() {
+    if (!confirm("Apply default services to ALL GIRL accounts?")) return;
+    setLoading(true);
+    const girls = accounts.filter((a) => a.role === "GIRL");
+    for (const g of girls) {
+      await supabase
+        .from("profiles")
+        .update({ services: JSON.stringify(DEFAULT_SERVICES) })
+        .eq("id", g.id);
+    }
+    setLoading(false);
+    setMessage(`Updated ${girls.length} girls`);
+    loadAccounts();
+  }
+
+  function savePaymentInstructions() {
+    localStorage.setItem(PAYMENT_KEY, paymentText);
+    setSettingsMsg("Payment instructions saved on this device (admin browser).");
+  }
+
+  function removeUnlock(id: string) {
+    const next = pendingUnlocks.filter((u) => u.id !== id);
+    setPendingUnlocks(next);
+    localStorage.setItem(UNLOCKS_KEY, JSON.stringify(next));
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const list = Array.from(e.target.files || []);
+    setFiles(list);
+    setPreviews(list.map((f) => URL.createObjectURL(f)));
+  }
+
+  const filtered = accounts.filter((a) => {
+    const q = accountSearch.toLowerCase();
+    const match =
+      !q ||
+      a.username?.toLowerCase().includes(q) ||
+      a.display_name?.toLowerCase().includes(q);
+    const roleOk = roleFilter === "ALL" || a.role === roleFilter;
+    return match && roleOk;
+  });
+
+  // ========== LOGIN ==========
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center p-6">
-        <div className="max-w-sm w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-          <h1 className="text-2xl font-bold text-pink-500 text-center mb-6">Admin Access</h1>
+      <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
+        <div className="w-full max-w-sm">
+          <h1 className="text-2xl font-bold text-pink-500 text-center mb-6">Admin</h1>
           <input
             type="password"
             placeholder="Enter admin password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleLogin()}
             className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 mb-4"
           />
           {message && <p className="text-red-400 text-sm text-center mb-3">{message}</p>}
-          <button onClick={handleLogin} className="w-full bg-pink-600 hover:bg-pink-700 text-white font-semibold py-3 rounded-xl">
+          <button
+            onClick={handleLogin}
+            className="w-full bg-pink-600 hover:bg-pink-700 text-white font-semibold py-3 rounded-xl"
+          >
             Enter Admin
           </button>
         </div>
@@ -291,36 +482,72 @@ export default function AdminPage() {
     );
   }
 
-  // ========== SINGLE ACCOUNT CONTROL ==========
+  // ========== SINGLE ACCOUNT ==========
   if (selectedAccount) {
     return (
       <div className="min-h-screen bg-black text-white p-4 pb-24">
         <div className="max-w-2xl mx-auto">
-          <button onClick={() => setSelectedAccount(null)} className="text-pink-500 mb-4 text-sm">
+          <button
+            onClick={() => setSelectedAccount(null)}
+            className="text-pink-500 mb-4 text-sm"
+          >
             ← Back to All Accounts
           </button>
 
-          {/* Account Header */}
-          <div className="flex items-center gap-4 mb-6">
+          <div className="flex items-center gap-4 mb-4">
             <div className="w-16 h-16 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-xl font-bold">
               {selectedAccount.avatar_url ? (
-                <img src={selectedAccount.avatar_url} className="w-full h-full object-cover" alt="" />
+                <img
+                  src={selectedAccount.avatar_url}
+                  className="w-full h-full object-cover"
+                  alt=""
+                />
               ) : (
                 selectedAccount.username?.[0]?.toUpperCase()
               )}
             </div>
-            <div>
-              <h2 className="text-xl font-bold">{selectedAccount.display_name || selectedAccount.username}</h2>
+            <div className="flex-1">
+              <h2 className="text-xl font-bold">
+                {selectedAccount.display_name || selectedAccount.username}
+              </h2>
               <p className="text-gray-400 text-sm">@{selectedAccount.username}</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {selectedAccount.role} · {selectedAccount.is_premium ? "PREMIUM" : "free"}
+              </p>
             </div>
           </div>
 
-          {/* SERVICES EDITOR */}
+          {/* Power controls */}
+          <div className="grid grid-cols-2 gap-2 mb-6">
+            <button
+              onClick={() => togglePremium(selectedAccount)}
+              className={`py-2.5 rounded-xl text-sm font-semibold ${
+                selectedAccount.is_premium ? "bg-yellow-600" : "bg-zinc-800"
+              }`}
+            >
+              {selectedAccount.is_premium ? "Remove Premium" : "Make Premium"}
+            </button>
+            <button
+              onClick={() => toggleRole(selectedAccount)}
+              className="py-2.5 rounded-xl text-sm font-semibold bg-zinc-800"
+            >
+              Role → {selectedAccount.role === "GIRL" ? "GUY" : "GIRL"}
+            </button>
+            <button
+              onClick={() => applyDefaultServices(selectedAccount)}
+              className="py-2.5 rounded-xl text-sm font-semibold bg-zinc-800 col-span-2"
+            >
+              Apply default services
+            </button>
+          </div>
+
+          {message && (
+            <p className="text-sm text-pink-400 mb-4 text-center">{message}</p>
+          )}
+
+          {/* Services */}
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
             <h3 className="font-bold mb-2">Services</h3>
-            <p className="text-xs text-gray-500 mb-3">
-              Edit the JSON list of services this account offers. Example format is pre-filled.
-            </p>
             <textarea
               value={servicesJson}
               onChange={(e) => setServicesJson(e.target.value)}
@@ -328,7 +555,11 @@ export default function AdminPage() {
               className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono resize-y mb-3"
             />
             {servicesMsg && (
-              <p className={`text-sm mb-2 ${servicesMsg.startsWith("Error") ? "text-red-400" : "text-green-400"}`}>
+              <p
+                className={`text-sm mb-2 ${
+                  servicesMsg.startsWith("Error") ? "text-red-400" : "text-green-400"
+                }`}
+              >
                 {servicesMsg}
               </p>
             )}
@@ -340,31 +571,22 @@ export default function AdminPage() {
             </button>
           </div>
 
-          {/* POST AS THIS ACCOUNT */}
+          {/* Post as account */}
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-8">
             <h3 className="font-bold mb-4">Post as this account</h3>
-
             <div className="flex gap-2 mb-4">
-              <button
-                onClick={() => setPostType("public")}
-                className={`flex-1 py-2 rounded-lg text-sm ${postType === "public" ? "bg-pink-600" : "bg-zinc-800"}`}
-              >
-                Public
-              </button>
-              <button
-                onClick={() => setPostType("private")}
-                className={`flex-1 py-2 rounded-lg text-sm ${postType === "private" ? "bg-pink-600" : "bg-zinc-800"}`}
-              >
-                Private ₦
-              </button>
-              <button
-                onClick={() => setPostType("story")}
-                className={`flex-1 py-2 rounded-lg text-sm ${postType === "story" ? "bg-pink-600" : "bg-zinc-800"}`}
-              >
-                Story
-              </button>
+              {(["public", "private", "story"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setPostType(t)}
+                  className={`flex-1 py-2 rounded-lg text-sm capitalize ${
+                    postType === t ? "bg-pink-600" : "bg-zinc-800"
+                  }`}
+                >
+                  {t === "private" ? "Private ₦" : t}
+                </button>
+              ))}
             </div>
-
             {postType === "public" && (
               <textarea
                 placeholder="Caption..."
@@ -374,12 +596,11 @@ export default function AdminPage() {
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 mb-3 resize-none"
               />
             )}
-
             {postType === "private" && (
               <>
                 <input
                   type="text"
-                  placeholder="Title (e.g. My Nudes)"
+                  placeholder="Title"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 mb-3"
@@ -395,248 +616,490 @@ export default function AdminPage() {
                 </div>
               </>
             )}
-
             {previews.length > 0 && (
-              <div className="grid grid-cols-4 gap-2 mb-3">
+              <div className="flex gap-2 mb-3 overflow-x-auto">
                 {previews.map((src, i) => (
-                  <div key={i} className="aspect-square rounded-lg overflow-hidden bg-zinc-800">
-                    <img src={src} className="w-full h-full object-cover" alt="" />
+                  <div key={i} className="w-20 h-20 rounded-lg overflow-hidden bg-zinc-800 shrink-0">
+                    {files[i]?.type.startsWith("video") ? (
+                      <video src={src} className="w-full h-full object-cover" />
+                    ) : (
+                      <img src={src} className="w-full h-full object-cover" alt="" />
+                    )}
                   </div>
                 ))}
               </div>
             )}
-
-            <div
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*,video/*"
+              multiple
+              className="hidden"
+              onChange={handleFileSelect}
+            />
+            <button
               onClick={() => fileRef.current?.click()}
-              className="border border-dashed border-zinc-600 rounded-xl p-6 text-center mb-4 cursor-pointer"
+              className="w-full bg-zinc-800 py-2.5 rounded-xl text-sm mb-3"
             >
-              <p className="text-gray-400 text-sm">
-                {files.length > 0 ? `${files.length} file(s) selected` : "Tap to select photos / videos"}
-              </p>
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/*,video/*"
-                multiple
-                className="hidden"
-                onChange={handleFileSelect}
-              />
-            </div>
-
-            {message && <p className="text-sm text-pink-400 mb-3">{message}</p>}
-
+              Choose media
+            </button>
             <button
               onClick={handlePostAsAccount}
-              disabled={loading || files.length === 0}
-              className="w-full bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white font-semibold py-3 rounded-xl"
+              disabled={loading}
+              className="w-full bg-pink-600 py-3 rounded-xl font-semibold text-sm disabled:opacity-50"
             >
-              {loading ? "Posting..." : "Post Now"}
+              {loading ? "Posting..." : "Post"}
             </button>
           </div>
 
-          {/* EXISTING CONTENT */}
-          <div className="space-y-8">
-            {/* Public Posts */}
-            <div>
-              <h3 className="font-bold mb-3">Public Posts ({accountPosts.length})</h3>
-              <div className="grid grid-cols-3 gap-2">
-                {accountPosts.map((p) => (
-                  <div key={p.id} className="relative aspect-square bg-zinc-900 rounded-lg overflow-hidden">
-                    <img src={p.media_url} className="w-full h-full object-cover" alt="" />
-                    <button
-                      onClick={() => deleteContent("posts", p.id)}
-                      className="absolute top-1 right-1 bg-black/70 text-xs px-2 py-1 rounded text-red-400"
-                    >
-                      Delete
-                    </button>
+          {/* Content lists */}
+          <section className="mb-6">
+            <h3 className="font-bold mb-2">Posts ({accountPosts.length})</h3>
+            <div className="space-y-2">
+              {accountPosts.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center gap-3 bg-zinc-900 rounded-xl p-2"
+                >
+                  <div className="w-12 h-12 bg-zinc-800 rounded overflow-hidden">
+                    {p.media_type === "video" ? (
+                      <video src={p.media_url} className="w-full h-full object-cover" />
+                    ) : (
+                      <img src={p.media_url} className="w-full h-full object-cover" alt="" />
+                    )}
                   </div>
-                ))}
-              </div>
+                  <p className="flex-1 text-xs text-gray-400 truncate">{p.caption || "—"}</p>
+                  <button
+                    onClick={() => deleteContent("posts", p.id)}
+                    className="text-red-400 text-xs"
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
             </div>
+          </section>
 
-            {/* Private Content */}
-            <div>
-              <h3 className="font-bold mb-3 text-pink-500">Private Content ({accountPrivate.length})</h3>
-              <div className="grid grid-cols-3 gap-2">
-                {accountPrivate.map((p) => (
-                  <div key={p.id} className="relative aspect-square bg-zinc-900 rounded-lg overflow-hidden">
-                    <img src={p.media_url} className="w-full h-full object-cover" alt="" />
-                    <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-xs p-1 text-center">
-                      ₦{p.price}
-                    </div>
-                    <button
-                      onClick={() => deleteContent("private_media", p.id)}
-                      className="absolute top-1 right-1 bg-black/70 text-xs px-2 py-1 rounded text-red-400"
-                    >
-                      Delete
-                    </button>
+          <section className="mb-6">
+            <h3 className="font-bold mb-2">Private ({accountPrivate.length})</h3>
+            <div className="space-y-2">
+              {accountPrivate.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center gap-3 bg-zinc-900 rounded-xl p-2"
+                >
+                  <div className="w-12 h-12 bg-zinc-800 rounded overflow-hidden">
+                    {p.media_type === "video" ? (
+                      <video src={p.media_url} className="w-full h-full object-cover" />
+                    ) : (
+                      <img src={p.media_url} className="w-full h-full object-cover" alt="" />
+                    )}
                   </div>
-                ))}
-              </div>
+                  <div className="flex-1">
+                    <p className="text-xs">{p.title}</p>
+                    <p className="text-xs text-pink-400">₦{p.price}</p>
+                  </div>
+                  <button
+                    onClick={() => deleteContent("private_media", p.id)}
+                    className="text-red-400 text-xs"
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
             </div>
+          </section>
 
-            {/* Stories */}
-            <div>
-              <h3 className="font-bold mb-3">Stories ({accountStories.length})</h3>
-              <div className="grid grid-cols-3 gap-2">
-                {accountStories.map((s) => (
-                  <div key={s.id} className="relative aspect-square bg-zinc-900 rounded-lg overflow-hidden">
-                    <img src={s.media_url} className="w-full h-full object-cover" alt="" />
-                    <button
-                      onClick={() => deleteContent("stories", s.id)}
-                      className="absolute top-1 right-1 bg-black/70 text-xs px-2 py-1 rounded text-red-400"
-                    >
-                      Delete
-                    </button>
+          <section className="mb-6">
+            <h3 className="font-bold mb-2">Stories ({accountStories.length})</h3>
+            <div className="space-y-2">
+              {accountStories.map((s) => (
+                <div
+                  key={s.id}
+                  className="flex items-center gap-3 bg-zinc-900 rounded-xl p-2"
+                >
+                  <div className="w-12 h-12 bg-zinc-800 rounded overflow-hidden">
+                    {s.media_type === "video" ? (
+                      <video src={s.media_url} className="w-full h-full object-cover" />
+                    ) : (
+                      <img src={s.media_url} className="w-full h-full object-cover" alt="" />
+                    )}
                   </div>
-                ))}
-              </div>
+                  <button
+                    onClick={() => deleteContent("stories", s.id)}
+                    className="text-red-400 text-xs ml-auto"
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
             </div>
-          </div>
+          </section>
         </div>
       </div>
     );
   }
 
-  // ========== MAIN ADMIN DASHBOARD ==========
+  // ========== MAIN ADMIN SHELL ==========
   return (
-    <div className="min-h-screen bg-black text-white p-4">
-      <div className="max-w-2xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
-          <h1 className="text-2xl font-bold text-pink-500">Lagos Girls Admin</h1>
-          <a href="/" className="text-sm text-gray-400">← Back to App</a>
+    <div className="min-h-screen bg-black text-white pb-20">
+      <header className="sticky top-0 z-40 bg-black border-b border-zinc-800 px-4 py-3">
+        <div className="max-w-2xl mx-auto flex items-center justify-between">
+          <h1 className="text-lg font-bold text-pink-500">Lagos Girls Admin</h1>
+          <button
+            onClick={() => setIsAuthenticated(false)}
+            className="text-xs text-gray-500"
+          >
+            Logout
+          </button>
         </div>
-
-        {/* CREATE ACCOUNT */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8">
-          <h2 className="text-lg font-bold mb-4">Create New Account</h2>
-          <div className="space-y-3">
-            <input
-              type="text"
-              placeholder="Username (no spaces)"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3"
-            />
-            <input
-              type="text"
-              placeholder="Display Name"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3"
-            />
-            <textarea
-              placeholder="Bio"
-              value={bio}
-              onChange={(e) => setBio(e.target.value)}
-              rows={2}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 resize-none"
-            />
-            <input
-              type="text"
-              placeholder="Location"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3"
-            />
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value as any)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3"
-            >
-              <option value="GIRL">Girl</option>
-              <option value="GUY">Guy</option>
-            </select>
-
-            <button onClick={() => avatarRef.current?.click()} className="text-sm text-pink-500">
-              {avatarFile ? avatarFile.name : "Upload Profile Picture"}
-            </button>
-            <input
-              ref={avatarRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => setAvatarFile(e.target.files?.[0] || null)}
-            />
-
-            {message && (
-              <p className={`text-sm ${message.includes("✅") ? "text-green-400" : "text-red-400"}`}>
-                {message}
-              </p>
-            )}
-
+        <div className="max-w-2xl mx-auto flex gap-1 mt-3 overflow-x-auto">
+          {(
+            [
+              ["accounts", "Accounts"],
+              ["stats", "Stats"],
+              ["chats", "Chats"],
+              ["unlocks", "Unlocks"],
+              ["settings", "Settings"],
+            ] as const
+          ).map(([id, label]) => (
             <button
-              onClick={createFakeAccount}
-              disabled={loading}
-              className="w-full bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white font-semibold py-3 rounded-xl"
+              key={id}
+              onClick={() => setTab(id)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium shrink-0 ${
+                tab === id ? "bg-pink-600 text-white" : "bg-zinc-900 text-gray-400"
+              }`}
             >
-              {loading ? "Creating..." : "Create Account"}
+              {label}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      <div className="max-w-2xl mx-auto p-4">
+        {message && (
+          <p className="text-sm text-pink-400 text-center mb-4">{message}</p>
+        )}
+
+        {/* STATS */}
+        {tab === "stats" && (
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              ["Users", stats.total],
+              ["Girls", stats.girls],
+              ["Guys", stats.guys],
+              ["Premium", stats.premium],
+              ["Posts", stats.posts],
+              ["Messages", stats.messages],
+            ].map(([label, val]) => (
+              <div
+                key={label as string}
+                className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4"
+              >
+                <p className="text-2xl font-bold text-pink-500">{val}</p>
+                <p className="text-xs text-gray-500 mt-1">{label}</p>
+              </div>
+            ))}
+            <button
+              onClick={() => {
+                loadStats();
+                loadAccounts();
+              }}
+              className="col-span-2 bg-zinc-800 py-2.5 rounded-xl text-sm"
+            >
+              Refresh
             </button>
           </div>
-        </div>
+        )}
 
-        {/* ALL ACCOUNTS */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold">All Accounts ({accounts.length})</h2>
+        {/* SETTINGS */}
+        {tab === "settings" && (
+          <div className="space-y-4">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+              <h3 className="font-bold mb-1">Payment instructions</h3>
+              <p className="text-xs text-gray-500 mb-3">
+                Shown when users book services / calls (saved in this browser until we wire a DB
+                settings table).
+              </p>
+              <textarea
+                value={paymentText}
+                onChange={(e) => setPaymentText(e.target.value)}
+                rows={8}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm mb-3"
+              />
+              <button
+                onClick={savePaymentInstructions}
+                className="w-full bg-pink-600 py-2.5 rounded-xl text-sm font-semibold"
+              >
+                Save payment text
+              </button>
+              {settingsMsg && (
+                <p className="text-green-400 text-xs mt-2">{settingsMsg}</p>
+              )}
+            </div>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+              <h3 className="font-bold mb-2">Bulk actions</h3>
+              <button
+                onClick={applyDefaultServicesAllGirls}
+                disabled={loading}
+                className="w-full bg-zinc-800 py-2.5 rounded-xl text-sm mb-2"
+              >
+                Apply default services to ALL girls
+              </button>
+            </div>
           </div>
+        )}
 
-          {/* Search + Filter */}
-          <div className="flex gap-2 mb-4">
-            <input
-              type="text"
-              placeholder="Search username or name..."
-              value={accountSearch}
-              onChange={(e) => setAccountSearch(e.target.value)}
-              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm"
-            />
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value as any)}
-              className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm"
-            >
-              <option value="ALL">All</option>
-              <option value="GIRL">Girls</option>
-              <option value="GUY">Guys</option>
-            </select>
+        {/* CHATS */}
+        {tab === "chats" && (
+          <div>
+            {!selectedConv ? (
+              <div className="space-y-2">
+                <button
+                  onClick={loadConversations}
+                  className="text-xs text-gray-500 mb-2"
+                >
+                  Refresh chats
+                </button>
+                {conversations.length === 0 && (
+                  <p className="text-gray-500 text-sm text-center py-8">No conversations yet</p>
+                )}
+                {conversations.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => openConversation(c)}
+                    className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-xl p-3"
+                  >
+                    <p className="text-sm font-medium">
+                      @{c.guy?.username || c.guy_id?.slice(0, 8)} → @
+                      {c.girl?.username || c.girl_id?.slice(0, 8)}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {c.updated_at
+                        ? new Date(c.updated_at).toLocaleString()
+                        : "—"}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div>
+                <button
+                  onClick={() => setSelectedConv(null)}
+                  className="text-pink-500 text-sm mb-3"
+                >
+                  ← Back
+                </button>
+                <p className="text-xs text-gray-500 mb-3">
+                  Reply as the girl. Users see this in the app.
+                </p>
+                <div className="space-y-2 mb-4 max-h-[50vh] overflow-y-auto">
+                  {convMessages.map((m) => (
+                    <div
+                      key={m.id}
+                      className={`text-sm px-3 py-2 rounded-xl max-w-[85%] ${
+                        m.sender_id === selectedConv.girl_id
+                          ? "bg-zinc-800 mr-auto"
+                          : "bg-pink-600 ml-auto"
+                      }`}
+                    >
+                      {m.content}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    value={adminReply}
+                    onChange={(e) => setAdminReply(e.target.value)}
+                    placeholder="Reply as girl..."
+                    className="flex-1 bg-zinc-900 border border-zinc-700 rounded-full px-4 py-2 text-sm"
+                  />
+                  <button
+                    onClick={sendAdminReply}
+                    className="bg-pink-600 px-4 rounded-full text-sm font-semibold"
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
+        )}
 
-          <div className="space-y-2 max-h-[560px] overflow-y-auto">
-            {accounts
-              .filter((acc) => {
-                const q = accountSearch.toLowerCase().trim();
-                const matchesSearch =
-                  !q ||
-                  acc.username?.toLowerCase().includes(q) ||
-                  acc.display_name?.toLowerCase().includes(q);
-                const matchesRole = roleFilter === "ALL" || acc.role === roleFilter;
-                return matchesSearch && matchesRole;
-              })
-              .map((acc) => (
+        {/* UNLOCKS */}
+        {tab === "unlocks" && (
+          <div>
+            <p className="text-xs text-gray-500 mb-4">
+              Manual private unlocks. When users tap “I’ve paid” on the main app (next update),
+              requests appear here. Approve after you confirm transfer.
+            </p>
+            {pendingUnlocks.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-8">No pending unlocks</p>
+            ) : (
+              <div className="space-y-2">
+                {pendingUnlocks.map((u) => (
+                  <div
+                    key={u.id}
+                    className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 flex justify-between items-center"
+                  >
+                    <div>
+                      <p className="text-sm">{u.label || u.id}</p>
+                      <p className="text-xs text-gray-500">{u.note}</p>
+                    </div>
+                    <button
+                      onClick={() => removeUnlock(u.id)}
+                      className="text-xs bg-green-700 px-3 py-1.5 rounded-lg"
+                    >
+                      Mark done
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ACCOUNTS */}
+        {tab === "accounts" && (
+          <>
+            {/* Create */}
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
+              <h3 className="font-bold mb-3">Create fake account</h3>
+              <input
+                placeholder="Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 mb-2 text-sm"
+              />
+              <input
+                placeholder="Display name"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 mb-2 text-sm"
+              />
+              <input
+                placeholder="Bio"
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 mb-2 text-sm"
+              />
+              <input
+                placeholder="Location"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 mb-2 text-sm"
+              />
+              <div className="flex gap-2 mb-2">
+                <button
+                  onClick={() => setRole("GIRL")}
+                  className={`flex-1 py-2 rounded-lg text-sm ${
+                    role === "GIRL" ? "bg-pink-600" : "bg-zinc-800"
+                  }`}
+                >
+                  GIRL
+                </button>
+                <button
+                  onClick={() => setRole("GUY")}
+                  className={`flex-1 py-2 rounded-lg text-sm ${
+                    role === "GUY" ? "bg-pink-600" : "bg-zinc-800"
+                  }`}
+                >
+                  GUY
+                </button>
+              </div>
+              <input
+                ref={avatarRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => setAvatarFile(e.target.files?.[0] || null)}
+              />
+              <button
+                onClick={() => avatarRef.current?.click()}
+                className="w-full bg-zinc-800 py-2 rounded-xl text-sm mb-2"
+              >
+                {avatarFile ? avatarFile.name : "Avatar (optional)"}
+              </button>
+              <button
+                onClick={createFakeAccount}
+                disabled={loading}
+                className="w-full bg-pink-600 py-3 rounded-xl font-semibold text-sm disabled:opacity-50"
+              >
+                {loading ? "Creating..." : "Create account"}
+              </button>
+            </div>
+
+            {/* Filters */}
+            <div className="flex gap-2 mb-3">
+              <input
+                placeholder="Search username..."
+                value={accountSearch}
+                onChange={(e) => setAccountSearch(e.target.value)}
+                className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm"
+              />
+              <select
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value as any)}
+                className="bg-zinc-900 border border-zinc-800 rounded-xl px-2 text-sm"
+              >
+                <option value="ALL">All</option>
+                <option value="GIRL">Girls</option>
+                <option value="GUY">Guys</option>
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              {filtered.map((acc) => (
                 <div
                   key={acc.id}
-                  onClick={() => setSelectedAccount(acc)}
-                  className="flex items-center gap-3 p-3 bg-zinc-800/80 rounded-xl cursor-pointer hover:bg-zinc-700 transition active:scale-[0.99]"
+                  className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded-xl p-3"
                 >
-                  <div className="w-11 h-11 rounded-full bg-zinc-700 overflow-hidden flex items-center justify-center font-bold text-sm shrink-0">
-                    {acc.avatar_url ? (
-                      <img src={acc.avatar_url} className="w-full h-full object-cover" alt="" />
-                    ) : (
-                      acc.username?.[0]?.toUpperCase()
-                    )}
+                  <button
+                    onClick={() => setSelectedAccount(acc)}
+                    className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                  >
+                    <div className="w-11 h-11 rounded-full bg-zinc-800 overflow-hidden shrink-0 flex items-center justify-center font-bold">
+                      {acc.avatar_url ? (
+                        <img
+                          src={acc.avatar_url}
+                          className="w-full h-full object-cover"
+                          alt=""
+                        />
+                      ) : (
+                        (acc.username || "?")[0].toUpperCase()
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {acc.display_name || acc.username}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate">
+                        @{acc.username} · {acc.role}
+                        {acc.is_premium ? " · ★" : ""}
+                      </p>
+                    </div>
+                  </button>
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <button
+                      onClick={() => togglePremium(acc)}
+                      className={`text-[10px] px-2 py-1 rounded-lg ${
+                        acc.is_premium ? "bg-yellow-700" : "bg-zinc-800"
+                      }`}
+                    >
+                      {acc.is_premium ? "Premium" : "Free"}
+                    </button>
+                    <button
+                      onClick={() => toggleRole(acc)}
+                      className="text-[10px] px-2 py-1 rounded-lg bg-zinc-800"
+                    >
+                      {acc.role}
+                    </button>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-sm truncate">{acc.display_name || acc.username}</p>
-                    <p className="text-[11px] text-gray-400 truncate">
-                      @{acc.username} • {acc.role}
-                      {acc.location ? ` • ${acc.location}` : ""}
-                    </p>
-                  </div>
-                  <span className="text-xs text-pink-500 font-medium shrink-0">Manage →</span>
                 </div>
               ))}
-          </div>
-        </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
