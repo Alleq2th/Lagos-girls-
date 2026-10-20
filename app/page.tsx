@@ -62,11 +62,100 @@ export default function Home() {
   const [unlockTarget, setUnlockTarget] = useState<any | null>(null);
   const [unlockedIds, setUnlockedIds] = useState<string[]>([]);
   const [readMap, setReadMap] = useState<Record<string, string>>({});
+  const [followingIds, setFollowingIds] = useState<string[]>([]);
 
   const PAYMENT_KEY = "lagos_payment_instructions";
   const UNLOCKS_KEY = "lagos_pending_unlocks";
   const READ_KEY = "lagos_chat_read";
   const UNLOCKED_KEY = "lagos_unlocked_media";
+  const FOLLOW_KEY = "lagos_following";
+
+  function isFollowing(userId: string) {
+    return followingIds.includes(userId);
+  }
+
+  async function loadFollowing(userId: string) {
+    try {
+      const { data, error } = await supabase
+        .from("follows")
+        .select("following_id")
+        .eq("follower_id", userId);
+      if (error) {
+        // Table missing or RLS — fall back to local cache
+        try {
+          setFollowingIds(JSON.parse(localStorage.getItem(FOLLOW_KEY) || "[]"));
+        } catch {
+          setFollowingIds([]);
+        }
+        return;
+      }
+      const ids = (data || []).map((r: any) => r.following_id);
+      setFollowingIds(ids);
+      try {
+        localStorage.setItem(FOLLOW_KEY, JSON.stringify(ids));
+      } catch {}
+    } catch {
+      try {
+        setFollowingIds(JSON.parse(localStorage.getItem(FOLLOW_KEY) || "[]"));
+      } catch {
+        setFollowingIds([]);
+      }
+    }
+  }
+
+  async function toggleFollow(userId: string) {
+    if (!session) {
+      setMessage("Log in to follow");
+      return;
+    }
+    if (userId === session.user.id) return;
+
+    const was = followingIds.includes(userId);
+    // Optimistic UI
+    const next = was
+      ? followingIds.filter((id) => id !== userId)
+      : [...followingIds, userId];
+    setFollowingIds(next);
+    try {
+      localStorage.setItem(FOLLOW_KEY, JSON.stringify(next));
+    } catch {}
+
+    if (was) {
+      const { error } = await supabase
+        .from("follows")
+        .delete()
+        .eq("follower_id", session.user.id)
+        .eq("following_id", userId);
+      if (error) {
+        setFollowingIds(followingIds);
+        setMessage("Follow failed — run the follows SQL in Supabase");
+      }
+    } else {
+      const { error } = await supabase.from("follows").insert({
+        follower_id: session.user.id,
+        following_id: userId,
+      });
+      if (error) {
+        setFollowingIds(followingIds);
+        setMessage("Follow failed — run the follows SQL in Supabase");
+      }
+    }
+  }
+
+  /** Soft presence for FOMO — girls feel online often */
+  function presenceLabel(user: { id: string; role?: string }) {
+    if (!user?.id) return "";
+    const hour = new Date().getHours();
+    let h = 0;
+    for (let i = 0; i < user.id.length; i++) h = (h + user.id.charCodeAt(i) * (i + 1 + hour)) % 100;
+    if (user.role === "GIRL") {
+      if (h < 45) return "Active now";
+      if (h < 75) return "Active today";
+      return "Active recently";
+    }
+    if (h < 25) return "Active now";
+    return "Active recently";
+  }
 
   function getPaymentInstructions() {
     if (typeof window === "undefined") return "";
@@ -154,6 +243,7 @@ export default function Home() {
       setSession(session);
       if (session) {
         ensureProfile(session.user);
+        loadFollowing(session.user.id);
         setView("feed");
       } else {
         setView("auth");
@@ -166,9 +256,11 @@ export default function Home() {
       setSession(session);
       if (session) {
         ensureProfile(session.user);
+        loadFollowing(session.user.id);
         if (event === "SIGNED_IN") setView("feed");
       } else {
         setProfile(null);
+        setFollowingIds([]);
         setView("auth");
       }
       setAuthLoading(false);
@@ -184,6 +276,7 @@ export default function Home() {
     try {
       setReadMap(JSON.parse(localStorage.getItem(READ_KEY) || "{}"));
       setUnlockedIds(JSON.parse(localStorage.getItem(UNLOCKED_KEY) || "[]"));
+      setFollowingIds(JSON.parse(localStorage.getItem(FOLLOW_KEY) || "[]"));
     } catch {}
   }, []);
 
@@ -666,7 +759,21 @@ export default function Home() {
       const girlName = chat.girl?.display_name || chat.girl?.username || undefined;
 
       setTimeout(async () => {
-        const reply = generateReply(body, personality, history, girlName);
+        let reply = generateReply(body, personality, history, girlName);
+        // Money path: if they ask how to pay / book, attach payment steps
+        const low = body.toLowerCase();
+        if (
+          low.includes("pay") ||
+          low.includes("book") ||
+          low.includes("transfer") ||
+          low.includes("account") ||
+          low.includes("how much")
+        ) {
+          const pay = getPaymentInstructions();
+          if (pay && !reply.toLowerCase().includes("opay") && !reply.toLowerCase().includes("monie")) {
+            reply = `${reply}\n\n${pay}`;
+          }
+        }
         await supabase.from("messages").insert({
           conversation_id: convId,
           sender_id: girlId,
@@ -1853,6 +1960,10 @@ export default function Home() {
                   <p className="text-[16px] font-bold">{myPosts.length}</p>
                   <p className="text-[11px] text-gray-500">Posts</p>
                 </div>
+                <div>
+                  <p className="text-[16px] font-bold">{followingIds.length}</p>
+                  <p className="text-[11px] text-gray-500">Following</p>
+                </div>
               </div>
             </div>
 
@@ -2087,9 +2198,14 @@ export default function Home() {
                     {selectedUser.display_name || selectedUser.username}
                   </h2>
                   <p className="text-[13px] text-gray-400 mt-0.5">@{selectedUser.username}</p>
-                  <span className="inline-block text-[11px] font-medium text-pink-500 bg-pink-500/10 px-2 py-0.5 rounded-full mt-1.5">
-                    {selectedUser.role}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                    <span className="inline-block text-[11px] font-medium text-pink-500 bg-pink-500/10 px-2 py-0.5 rounded-full">
+                      {selectedUser.role}
+                    </span>
+                    <span className="text-[11px] text-green-400">
+                      {presenceLabel(selectedUser)}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -2100,20 +2216,32 @@ export default function Home() {
                 <p className="text-[12.5px] text-gray-500 mt-1.5">📍 {selectedUser.location}</p>
               )}
 
-              {/* Message anyone (not yourself). Premium required to actually start chat. */}
+              {/* Follow + Message — investment then paywall */}
               {session && selectedUser.id !== session.user.id && (
-                <button
-                  onClick={() => {
-                    if (!profile?.is_premium) {
-                      setMessage("Become Premium (₦5,000) to message girls");
-                      return;
-                    }
-                    startChat(selectedUser.id);
-                  }}
-                  className="w-full bg-pink-600 hover:bg-pink-500 py-3 rounded-xl font-semibold mt-4 text-[14px]"
-                >
-                  {profile?.is_premium ? "Message" : "Message (Premium)"}
-                </button>
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={() => toggleFollow(selectedUser.id)}
+                    className={`flex-1 py-3 rounded-xl font-semibold text-[14px] ${
+                      isFollowing(selectedUser.id)
+                        ? "bg-zinc-800 text-white border border-zinc-700"
+                        : "bg-white text-black"
+                    }`}
+                  >
+                    {isFollowing(selectedUser.id) ? "Following" : "Follow"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!profile?.is_premium) {
+                        setMessage("Become Premium (₦5,000) to message girls");
+                        return;
+                      }
+                      startChat(selectedUser.id);
+                    }}
+                    className="flex-1 bg-pink-600 hover:bg-pink-500 py-3 rounded-xl font-semibold text-[14px]"
+                  >
+                    {profile?.is_premium ? "Message" : "Message ₦"}
+                  </button>
+                </div>
               )}
             </div>
 
