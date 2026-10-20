@@ -58,6 +58,59 @@ export default function Home() {
   const [pendingChatMessage, setPendingChatMessage] = useState<string | null>(null);
   const lastTapRef = useRef<{ id: string; t: number } | null>(null);
   const [reelPaused, setReelPaused] = useState<Record<string, boolean>>({});
+  const [paySheet, setPaySheet] = useState<null | { title: string; amount?: number; note?: string }>(null);
+  const [unlockTarget, setUnlockTarget] = useState<any | null>(null);
+  const [unlockedIds, setUnlockedIds] = useState<string[]>([]);
+  const [readMap, setReadMap] = useState<Record<string, string>>({});
+
+  const PAYMENT_KEY = "lagos_payment_instructions";
+  const UNLOCKS_KEY = "lagos_pending_unlocks";
+  const READ_KEY = "lagos_chat_read";
+  const UNLOCKED_KEY = "lagos_unlocked_media";
+
+  function getPaymentInstructions() {
+    if (typeof window === "undefined") return "";
+    return (
+      localStorage.getItem(PAYMENT_KEY) ||
+      "Pay to:\nOPay / Moniepoint — ask the girl in chat for the account after you book.\nAfter payment, message: I have paid for [service]."
+    );
+  }
+
+  function openPaySheet(title: string, amount?: number, note?: string) {
+    setPaySheet({ title, amount, note });
+  }
+
+  function submitPaidRequest(label: string, note?: string) {
+    try {
+      const list = JSON.parse(localStorage.getItem(UNLOCKS_KEY) || "[]");
+      list.unshift({
+        id: Date.now().toString(),
+        label,
+        note: note || "",
+        at: new Date().toISOString(),
+        user: profile?.username || session?.user?.id,
+      });
+      localStorage.setItem(UNLOCKS_KEY, JSON.stringify(list.slice(0, 100)));
+    } catch {}
+    setMessage("Payment marked — wait for confirmation. Admin will unlock after verify.");
+    setPaySheet(null);
+    setUnlockTarget(null);
+  }
+
+  function markChatRead(convId: string) {
+    const next = { ...readMap, [convId]: new Date().toISOString() };
+    setReadMap(next);
+    try {
+      localStorage.setItem(READ_KEY, JSON.stringify(next));
+    } catch {}
+  }
+
+  function isUnread(conv: any) {
+    if (!conv?.updated_at) return false;
+    const last = readMap[conv.id];
+    if (!last) return true;
+    return new Date(conv.updated_at).getTime() > new Date(last).getTime();
+  }
 
   // Auth
   const [email, setEmail] = useState("");
@@ -125,6 +178,13 @@ export default function Home() {
       mounted = false;
       subscription.unsubscribe();
     };
+  }, []);
+
+  useEffect(() => {
+    try {
+      setReadMap(JSON.parse(localStorage.getItem(READ_KEY) || "{}"));
+      setUnlockedIds(JSON.parse(localStorage.getItem(UNLOCKED_KEY) || "[]"));
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -562,6 +622,7 @@ export default function Home() {
       service.desc ? ` (${service.desc})` : ""
     }. How do I pay?`;
     await startChat(girlId, text);
+    openPaySheet(service.name, Number(service.price), "Booked in chat — pay then message: I have paid");
   }
 
   async function loadChatMessages(conversationId: string) {
@@ -1636,6 +1697,7 @@ export default function Home() {
                       onClick={() => {
                         setCurrentChat(conv);
                         loadChatMessages(conv.id);
+                        markChatRead(conv.id);
                         setView("chat");
                       }}
                       className="flex items-center gap-3 px-4 py-3 active:bg-zinc-900 cursor-pointer"
@@ -1650,10 +1712,17 @@ export default function Home() {
                         )}
                       </div>
                       <div className="min-w-0 flex-1 border-b border-zinc-900 pb-3">
-                        <p className="font-semibold text-[14px] truncate">
-                          {other?.display_name || other?.username}
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-semibold text-[14px] truncate">
+                            {other?.display_name || other?.username}
+                          </p>
+                          {isUnread(conv) && (
+                            <span className="w-2.5 h-2.5 rounded-full bg-pink-500 shrink-0" />
+                          )}
+                        </div>
+                        <p className="text-[13px] text-gray-500 truncate">
+                          {isUnread(conv) ? "New activity" : "Tap to open chat"}
                         </p>
-                        <p className="text-[13px] text-gray-500 truncate">Tap to open chat</p>
                       </div>
                     </div>
                   );
@@ -2118,22 +2187,53 @@ export default function Home() {
               )}
             </div>
 
-            {/* Private Content */}
+            {/* Private Content — pay to unlock */}
             {userPrivate.length > 0 && (
               <div className="mt-4 border-t border-zinc-900">
                 <div className="px-4 py-3">
                   <h3 className="font-semibold text-[14px] text-pink-500">Private Content 🔒</h3>
                 </div>
                 <div className="px-4 grid grid-cols-2 gap-3 pb-4">
-                  {userPrivate.map((m) => (
-                    <div key={m.id} className="relative rounded-xl overflow-hidden bg-zinc-900">
-                      <img src={m.media_url} className="w-full aspect-[3/4] object-cover locked" alt="" />
-                      <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center p-2">
-                        <p className="font-medium text-[13px] mb-1 text-center">{m.title}</p>
-                        <p className="text-pink-400 font-bold text-[14px]">₦{m.price.toLocaleString()}</p>
-                      </div>
-                    </div>
-                  ))}
+                  {userPrivate.map((m) => {
+                    const open = unlockedIds.includes(m.id);
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => {
+                          if (open) setViewingPost({ ...m, caption: m.title });
+                          else setUnlockTarget(m);
+                        }}
+                        className="relative rounded-xl overflow-hidden bg-zinc-900 text-left"
+                      >
+                        {m.media_type === "video" ? (
+                          <video
+                            src={m.media_url}
+                            className={`w-full aspect-[3/4] object-cover ${open ? "" : "blur-md scale-105"}`}
+                            muted
+                            playsInline
+                          />
+                        ) : (
+                          <img
+                            src={m.media_url}
+                            className={`w-full aspect-[3/4] object-cover ${open ? "" : "blur-md scale-105"}`}
+                            alt=""
+                          />
+                        )}
+                        {!open && (
+                          <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center p-2">
+                            <p className="font-medium text-[13px] mb-1 text-center">{m.title}</p>
+                            <p className="text-pink-400 font-bold text-[14px]">
+                              ₦{Number(m.price).toLocaleString()}
+                            </p>
+                            <span className="mt-2 text-[11px] bg-pink-600 px-3 py-1 rounded-full font-semibold">
+                              Unlock
+                            </span>
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -2302,10 +2402,11 @@ export default function Home() {
               <button
                 onClick={async () => {
                   const kind = callModal === "voice" ? "Voice call" : "Video call";
-                  const price = callModal === "voice" ? "10,000" : "20,000";
-                  const text = `I want to book a ${kind} — ₦${price}. How do I pay?`;
+                  const amount = callModal === "voice" ? 10000 : 20000;
+                  const text = `I want to book a ${kind} — ₦${amount.toLocaleString()}. How do I pay?`;
                   setCallModal(null);
                   await sendMessageText(text, currentChat);
+                  openPaySheet(kind, amount, "Request sent in chat");
                 }}
                 className="w-full bg-pink-600 py-3 rounded-xl font-semibold text-[14px] mb-2"
               >
@@ -2313,6 +2414,88 @@ export default function Home() {
               </button>
               <button
                 onClick={() => setCallModal(null)}
+                className="w-full bg-zinc-800 py-3 rounded-xl text-[14px] text-gray-300"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Payment instructions sheet */}
+        {paySheet && (
+          <div className="fixed inset-0 z-[80] bg-black/85 flex items-end sm:items-center justify-center p-4">
+            <div className="w-full max-w-sm bg-zinc-900 border border-zinc-700 rounded-2xl p-5 max-h-[85vh] overflow-y-auto">
+              <h3 className="text-[17px] font-semibold mb-1">{paySheet.title}</h3>
+              {paySheet.amount != null && (
+                <p className="text-pink-400 font-bold text-[18px] mb-2">
+                  ₦{Number(paySheet.amount).toLocaleString()}
+                </p>
+              )}
+              {paySheet.note && (
+                <p className="text-[12px] text-gray-500 mb-3">{paySheet.note}</p>
+              )}
+              <p className="text-[12px] text-gray-400 mb-1 font-medium">How to pay</p>
+              <pre className="text-[13px] text-gray-200 whitespace-pre-wrap bg-zinc-950 border border-zinc-800 rounded-xl p-3 mb-4 font-sans">
+                {getPaymentInstructions()}
+              </pre>
+              <button
+                onClick={() =>
+                  submitPaidRequest(
+                    paySheet.title +
+                      (paySheet.amount != null
+                        ? ` ₦${Number(paySheet.amount).toLocaleString()}`
+                        : ""),
+                    paySheet.note
+                  )
+                }
+                className="w-full bg-pink-600 py-3 rounded-xl font-semibold text-[14px] mb-2"
+              >
+                I&apos;ve paid
+              </button>
+              <button
+                onClick={() => setPaySheet(null)}
+                className="w-full bg-zinc-800 py-3 rounded-xl text-[14px] text-gray-300"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Private unlock sheet */}
+        {unlockTarget && (
+          <div className="fixed inset-0 z-[80] bg-black/85 flex items-end sm:items-center justify-center p-4">
+            <div className="w-full max-w-sm bg-zinc-900 border border-zinc-700 rounded-2xl p-5 max-h-[85vh] overflow-y-auto">
+              <h3 className="text-[17px] font-semibold mb-1">
+                Unlock {unlockTarget.title || "private content"}
+              </h3>
+              <p className="text-pink-400 font-bold text-[18px] mb-3">
+                ₦{Number(unlockTarget.price).toLocaleString()}
+              </p>
+              <p className="text-[12px] text-gray-400 mb-1 font-medium">How to pay</p>
+              <pre className="text-[13px] text-gray-200 whitespace-pre-wrap bg-zinc-950 border border-zinc-800 rounded-xl p-3 mb-4 font-sans">
+                {getPaymentInstructions()}
+              </pre>
+              <button
+                onClick={() => {
+                  submitPaidRequest(
+                    `Private: ${unlockTarget.title} ₦${Number(unlockTarget.price).toLocaleString()}`,
+                    `media:${unlockTarget.id}`
+                  );
+                  // Soft unlock on device until admin confirms (money path stays honest via Unlocks tab)
+                  const next = [...unlockedIds, unlockTarget.id];
+                  setUnlockedIds(next);
+                  try {
+                    localStorage.setItem(UNLOCKED_KEY, JSON.stringify(next));
+                  } catch {}
+                }}
+                className="w-full bg-pink-600 py-3 rounded-xl font-semibold text-[14px] mb-2"
+              >
+                I&apos;ve paid — unlock
+              </button>
+              <button
+                onClick={() => setUnlockTarget(null)}
                 className="w-full bg-zinc-800 py-3 rounded-xl text-[14px] text-gray-300"
               >
                 Cancel
