@@ -37,6 +37,9 @@ export default function Home() {
   const [currentChat, setCurrentChat] = useState<any>(null);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState("");
+  const [userSearch, setUserSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<Profile[]>([]);
+  const [viewingPost, setViewingPost] = useState<any | null>(null);
 
   // Auth
   const [email, setEmail] = useState("");
@@ -290,8 +293,24 @@ export default function Home() {
       .or(`guy_id.eq.${session.user.id},girl_id.eq.${session.user.id}`)
       .order("updated_at", { ascending: false });
     setConversations(data || []);
+  }
+
+  async function searchUsers(q: string) {
+    setUserSearch(q);
+    if (!q.trim() || q.trim().length < 1) {
+      setSearchResults([]);
+      return;
     }
-    async function openUserProfile(userId: string) {
+    const term = q.trim().toLowerCase();
+    const { data } = await supabase
+      .from("profiles")
+      .select("*")
+      .or(`username.ilike.%${term}%,display_name.ilike.%${term}%`)
+      .limit(12);
+    setSearchResults((data || []).filter((p: Profile) => p.id !== session?.user?.id));
+  }
+
+  async function openUserProfile(userId: string) {
     const { data: userData } = await supabase.from("profiles").select("*").eq("id", userId).single();
     if (!userData) return;
     setSelectedUser(userData);
@@ -461,8 +480,6 @@ export default function Home() {
       .eq("girl_id", girlId)
       .maybeSingle();
 
-    const isNew = !existing;
-
     if (!existing) {
       const { data: newConv, error } = await supabase
         .from("conversations")
@@ -483,26 +500,7 @@ export default function Home() {
     setCurrentChat(existing);
     await loadChatMessages(existing.id);
     setView("chat");
-
-    // First-time chat: girl sends a short opener after a delay
-    if (isNew && existing) {
-      const girlIdForBot = existing.girl_id;
-      const convId = existing.id;
-      setTimeout(async () => {
-        const personality = getPersonality(girlIdForBot);
-        const opener = generateOpener(personality);
-        await supabase.from("messages").insert({
-          conversation_id: convId,
-          sender_id: girlIdForBot,
-          content: opener,
-        });
-        await supabase
-          .from("conversations")
-          .update({ updated_at: new Date().toISOString() })
-          .eq("id", convId);
-        loadChatMessages(convId);
-      }, delayFeel());
-    }
+    // User texts first — girl only replies after user sends a message
   }
 
   async function loadChatMessages(conversationId: string) {
@@ -1456,7 +1454,50 @@ export default function Home() {
         {/* ========== MESSAGES ========== */}
         {view === "messages" && (
           <div className="p-4">
-            <h2 className="text-[18px] font-bold mb-4">Messages</h2>
+            <h2 className="text-[18px] font-bold mb-3">Messages</h2>
+
+            {/* Search people to message */}
+            <div className="mb-4">
+              <input
+                type="text"
+                placeholder="Search by name or username..."
+                value={userSearch}
+                onChange={(e) => searchUsers(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-[14px] placeholder:text-gray-500"
+              />
+              {searchResults.length > 0 && (
+                <div className="mt-2 bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+                  {searchResults.map((u) => (
+                    <div
+                      key={u.id}
+                      onClick={() => {
+                        setUserSearch("");
+                        setSearchResults([]);
+                        if (profile?.is_premium) {
+                          startChat(u.id);
+                        } else {
+                          openUserProfile(u.id);
+                        }
+                      }}
+                      className="flex items-center gap-3 p-3 border-b border-zinc-800 last:border-0 cursor-pointer active:bg-zinc-800"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center font-bold shrink-0 text-sm">
+                        {u.avatar_url ? (
+                          <img src={u.avatar_url} className="w-full h-full object-cover" alt="" />
+                        ) : (
+                          (u.username || "?")[0].toUpperCase()
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium text-[14px] truncate">{u.display_name || u.username}</p>
+                        <p className="text-[12px] text-gray-500 truncate">@{u.username}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {!profile?.is_premium && (
               <div className="bg-zinc-900/80 border border-pink-500/20 rounded-2xl p-6 mb-6 text-center">
                 <p className="text-[15px] mb-1 font-medium">Premium only</p>
@@ -1470,9 +1511,9 @@ export default function Home() {
               </div>
             )}
             {conversations.length === 0 ? (
-              <div className="text-center py-20">
+              <div className="text-center py-16">
                 <p className="text-gray-500 text-[15px]">No conversations yet</p>
-                <p className="text-gray-600 text-[13px] mt-1">Start chatting from someone’s profile</p>
+                <p className="text-gray-600 text-[13px] mt-1">Search above or open someone’s profile</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -1719,7 +1760,11 @@ export default function Home() {
               ) : (
                 <div className="grid grid-cols-3 gap-[2px]">
                   {myPosts.map((p) => (
-                    <div key={p.id} className="relative aspect-square bg-zinc-900 overflow-hidden group">
+                    <div
+                      key={p.id}
+                      className="relative aspect-square bg-zinc-900 overflow-hidden group cursor-pointer"
+                      onClick={() => setViewingPost(p)}
+                    >
                       {p.media_type === "video" ? (
                         <video
                           src={p.media_url}
@@ -1737,7 +1782,10 @@ export default function Home() {
                         </span>
                       )}
                       <button
-                        onClick={() => deleteMyPost(p.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteMyPost(p.id);
+                        }}
                         className="absolute top-1.5 right-1.5 bg-black/70 text-[11px] w-6 h-6 flex items-center justify-center rounded-full text-red-400 opacity-80"
                       >
                         ✕
@@ -1898,7 +1946,11 @@ export default function Home() {
               ) : (
                 <div className="grid grid-cols-3 gap-[2px]">
                   {userPosts.map((p) => (
-                    <div key={p.id} className="relative aspect-square bg-zinc-900 overflow-hidden">
+                    <div
+                      key={p.id}
+                      className="relative aspect-square bg-zinc-900 overflow-hidden cursor-pointer"
+                      onClick={() => setViewingPost(p)}
+                    >
                       {p.media_type === "video" ? (
                         <video src={p.media_url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
                       ) : (
@@ -1931,6 +1983,46 @@ export default function Home() {
                   ))}
                 </div>
               </div>
+            )}
+          </div>
+        )}
+      {/* Full post viewer when tapping a grid post */}
+        {viewingPost && (
+          <div
+            className="fixed inset-0 z-50 bg-black/95 flex flex-col"
+            onClick={() => setViewingPost(null)}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+              <button onClick={() => setViewingPost(null)} className="text-white text-[15px]">
+                Close
+              </button>
+              <span className="text-gray-400 text-[13px]">Post</span>
+              <span className="w-12" />
+            </div>
+            <div
+              className="flex-1 flex items-center justify-center p-2"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {viewingPost.media_type === "video" ? (
+                <video
+                  src={viewingPost.media_url}
+                  className="max-h-[80vh] max-w-full rounded-lg"
+                  controls
+                  autoPlay
+                  playsInline
+                />
+              ) : (
+                <img
+                  src={viewingPost.media_url}
+                  className="max-h-[80vh] max-w-full object-contain rounded-lg"
+                  alt=""
+                />
+              )}
+            </div>
+            {viewingPost.caption && (
+              <p className="px-4 py-3 text-[14px] text-gray-300 border-t border-zinc-800">
+                {viewingPost.caption}
+              </p>
             )}
           </div>
         )}
