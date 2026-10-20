@@ -91,16 +91,31 @@ export default function AdminPage() {
       loadAccounts();
       loadStats();
       loadConversations();
-      const saved = localStorage.getItem(PAYMENT_KEY);
-      setPaymentText(
-        saved ||
-          "Pay to:\nOPay: 0000000000 (Name)\nMoniepoint: 0000000000 (Name)\nCrypto: USDT TRC20 — your_wallet\n\nAfter payment, message the girl: I have paid for [service]."
-      );
-      try {
-        setPendingUnlocks(JSON.parse(localStorage.getItem(UNLOCKS_KEY) || "[]"));
-      } catch {
-        setPendingUnlocks([]);
-      }
+      (async () => {
+        try {
+          const { data } = await supabase
+            .from("app_settings")
+            .select("value")
+            .eq("key", "payment_instructions")
+            .maybeSingle();
+          if (data?.value) {
+            setPaymentText(data.value);
+          } else {
+            const saved = localStorage.getItem(PAYMENT_KEY);
+            setPaymentText(
+              saved ||
+                "Pay to:\nOPay: 0000000000 (Name)\nMoniepoint: 0000000000 (Name)\nCrypto: USDT TRC20 — your_wallet\n\nAfter payment, message: I have paid for [service]."
+            );
+          }
+        } catch {
+          const saved = localStorage.getItem(PAYMENT_KEY);
+          setPaymentText(
+            saved ||
+              "Pay to:\nOPay: 0000000000 (Name)\nMoniepoint: 0000000000 (Name)\n\nAfter payment, message: I have paid for [service]."
+          );
+        }
+        loadUnlockRequests();
+      })();
     }
   }, [isAuthenticated]);
 
@@ -429,9 +444,72 @@ export default function AdminPage() {
     loadAccounts();
   }
 
-  function savePaymentInstructions() {
+  async function savePaymentInstructions() {
     localStorage.setItem(PAYMENT_KEY, paymentText);
-    setSettingsMsg("Payment instructions saved on this device (admin browser).");
+    try {
+      const { error } = await supabase.from("app_settings").upsert(
+        {
+          key: "payment_instructions",
+          value: paymentText,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "key" }
+      );
+      if (error) {
+        setSettingsMsg("Saved locally. DB: " + error.message + " — run app_settings SQL");
+      } else {
+        setSettingsMsg("Saved for all users (Supabase).");
+      }
+    } catch (e: any) {
+      setSettingsMsg("Saved locally only. " + (e?.message || ""));
+    }
+  }
+
+  async function loadUnlockRequests() {
+    try {
+      const { data, error } = await supabase
+        .from("unlock_requests")
+        .select("*")
+        .eq("status", "pending")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (!error && data) {
+        setPendingUnlocks(
+          data.map((r: any) => ({
+            id: r.id,
+            label: r.label,
+            note: r.note,
+            media_id: r.media_id,
+            user_id: r.user_id,
+            at: r.created_at,
+          }))
+        );
+        return;
+      }
+    } catch {}
+    try {
+      setPendingUnlocks(JSON.parse(localStorage.getItem(UNLOCKS_KEY) || "[]"));
+    } catch {
+      setPendingUnlocks([]);
+    }
+  }
+
+  async function approveUnlock(u: any) {
+    if (u.media_id && u.user_id) {
+      const { error: insErr } = await supabase.from("media_unlocks").upsert(
+        { user_id: u.user_id, media_id: u.media_id },
+        { onConflict: "user_id,media_id" }
+      );
+      if (insErr) {
+        setMessage("Unlock DB error: " + insErr.message);
+        return;
+      }
+    }
+    if (typeof u.id === "string" && u.id.length > 15) {
+      await supabase.from("unlock_requests").update({ status: "approved" }).eq("id", u.id);
+    }
+    setPendingUnlocks((prev) => prev.filter((x) => x.id !== u.id));
+    setMessage("Unlock approved — user can see content after refresh");
   }
 
   function removeUnlock(id: string) {
@@ -929,10 +1007,14 @@ export default function AdminPage() {
         {/* UNLOCKS */}
         {tab === "unlocks" && (
           <div>
-            <p className="text-xs text-gray-500 mb-4">
-              Manual private unlocks. When users tap “I’ve paid” on the main app (next update),
-              requests appear here. Approve after you confirm transfer.
-            </p>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-xs text-gray-500">
+                Users tap “I’ve paid” → appear here. Approve only after you confirm transfer.
+              </p>
+              <button onClick={loadUnlockRequests} className="text-xs text-pink-500 shrink-0 ml-2">
+                Refresh
+              </button>
+            </div>
             {pendingUnlocks.length === 0 ? (
               <p className="text-gray-500 text-sm text-center py-8">No pending unlocks</p>
             ) : (
@@ -940,18 +1022,29 @@ export default function AdminPage() {
                 {pendingUnlocks.map((u) => (
                   <div
                     key={u.id}
-                    className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 flex justify-between items-center"
+                    className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 flex justify-between items-center gap-2"
                   >
-                    <div>
-                      <p className="text-sm">{u.label || u.id}</p>
-                      <p className="text-xs text-gray-500">{u.note}</p>
+                    <div className="min-w-0">
+                      <p className="text-sm truncate">{u.label || u.id}</p>
+                      <p className="text-xs text-gray-500 truncate">{u.note}</p>
+                      {u.user_id && (
+                        <p className="text-[10px] text-gray-600 truncate">user: {u.user_id}</p>
+                      )}
                     </div>
-                    <button
-                      onClick={() => removeUnlock(u.id)}
-                      className="text-xs bg-green-700 px-3 py-1.5 rounded-lg"
-                    >
-                      Mark done
-                    </button>
+                    <div className="flex flex-col gap-1 shrink-0">
+                      <button
+                        onClick={() => approveUnlock(u)}
+                        className="text-xs bg-green-700 px-3 py-1.5 rounded-lg"
+                      >
+                        Approve unlock
+                      </button>
+                      <button
+                        onClick={() => removeUnlock(u.id)}
+                        className="text-xs bg-zinc-800 px-3 py-1.5 rounded-lg text-gray-400"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
