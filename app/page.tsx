@@ -55,6 +55,8 @@ export default function Home() {
   const [searchResults, setSearchResults] = useState<Profile[]>([]);
   const [viewingPost, setViewingPost] = useState<any | null>(null);
   const [callModal, setCallModal] = useState<null | "voice" | "video">(null);
+  const [pendingChatMessage, setPendingChatMessage] = useState<string | null>(null);
+  const lastTapRef = useRef<{ id: string; t: number } | null>(null);
   const [reelPaused, setReelPaused] = useState<Record<string, boolean>>({});
 
   // Auth
@@ -176,13 +178,25 @@ export default function Home() {
         user.email?.split("@")[0] ||
         "user" + Date.now().toString().slice(-6);
 
-      const newProfile = {
+      const role = user.user_metadata?.role || "GUY";
+      const defaultServices =
+        role === "GIRL"
+          ? JSON.stringify([
+              { name: "Video Call", price: 15000, desc: "15 minutes" },
+              { name: "Custom Video", price: 25000, desc: "Personalized" },
+              { name: "Private Chat", price: 5000, desc: "1 hour" },
+              { name: "Voice Call", price: 10000, desc: "Live voice" },
+              { name: "Video Call Extended", price: 20000, desc: "30 minutes" },
+            ])
+          : undefined;
+      const newProfile: any = {
         id: user.id,
         username,
         display_name: user.user_metadata?.username || username,
-        role: user.user_metadata?.role || "GUY",
+        role,
         is_premium: false,
       };
+      if (defaultServices) newProfile.services = defaultServices;
 
       // Use upsert so it works even if a race creates it first
       const { data: created, error: insertError } = await supabase
@@ -492,14 +506,13 @@ export default function Home() {
   }
 
   // ========== MESSAGING ==========
-  async function startChat(girlId: string) {
+  async function startChat(girlId: string, firstMessage?: string) {
     if (!session || !profile) return;
 
     if (!profile.is_premium) {
-      return setMessage("Only Premium users can message. Become Premium for ₦5,000");
+      return setMessage("Become Premium — ₦5,000 to message and book services");
     }
 
-    // Check if conversation already exists
     let { data: existing } = await supabase
       .from("conversations")
       .select("*")
@@ -527,7 +540,28 @@ export default function Home() {
     setCurrentChat(existing);
     await loadChatMessages(existing.id);
     setView("chat");
-    // User texts first — girl only replies after user sends a message
+
+    // Auto-send booking / call request so path to money is one tap
+    if (firstMessage && existing) {
+      setTimeout(() => {
+        sendMessageText(firstMessage, existing!);
+      }, 300);
+    }
+  }
+
+  async function requestService(
+    girlId: string,
+    service: { name: string; price: number; desc?: string }
+  ) {
+    if (!session || !profile) return;
+    if (!profile.is_premium) {
+      setMessage("Become Premium — ₦5,000 to book services");
+      return;
+    }
+    const text = `I want to book ${service.name} — ₦${Number(service.price).toLocaleString()}${
+      service.desc ? ` (${service.desc})` : ""
+    }. How do I pay?`;
+    await startChat(girlId, text);
   }
 
   async function loadChatMessages(conversationId: string) {
@@ -539,46 +573,39 @@ export default function Home() {
     setChatMessages(data || []);
   }
 
-  async function sendMessage() {
-    if (!newMessage.trim() || !currentChat || !session) return;
-
-    const text = newMessage.trim();
-    setNewMessage("");
+  async function sendMessageText(text: string, chat: any) {
+    if (!text.trim() || !chat || !session) return;
+    const body = text.trim();
 
     await supabase.from("messages").insert({
-      conversation_id: currentChat.id,
+      conversation_id: chat.id,
       sender_id: session.user.id,
-      content: text,
+      content: body,
     });
 
     await supabase
       .from("conversations")
       .update({ updated_at: new Date().toISOString() })
-      .eq("id", currentChat.id);
+      .eq("id", chat.id);
 
-    await loadChatMessages(currentChat.id);
+    await loadChatMessages(chat.id);
 
-    // Auto-reply from the girl account (chatbot)
-    const girlId = currentChat.girl_id;
-    const convId = currentChat.id;
+    const girlId = chat.girl_id;
+    const convId = chat.id;
     if (girlId && girlId !== session.user.id) {
       const personality = getPersonality(girlId);
-      // build short history for context
       const history = (chatMessages || [])
         .slice(-8)
         .map((m: any) => ({
           role: (m.sender_id === session.user.id ? "user" : "girl") as "user" | "girl",
           text: m.content || "",
         }));
-      history.push({ role: "user", text });
+      history.push({ role: "user", text: body });
 
-      const girlName =
-        currentChat.girl?.display_name ||
-        currentChat.girl?.username ||
-        undefined;
+      const girlName = chat.girl?.display_name || chat.girl?.username || undefined;
 
       setTimeout(async () => {
-        const reply = generateReply(text, personality, history, girlName);
+        const reply = generateReply(body, personality, history, girlName);
         await supabase.from("messages").insert({
           conversation_id: convId,
           sender_id: girlId,
@@ -590,6 +617,24 @@ export default function Home() {
           .eq("id", convId);
         loadChatMessages(convId);
       }, delayFeel());
+    }
+  }
+
+  async function sendMessage() {
+    if (!newMessage.trim() || !currentChat || !session) return;
+    const text = newMessage.trim();
+    setNewMessage("");
+    await sendMessageText(text, currentChat);
+  }
+
+  function handleDoubleTapLike(postId: string) {
+    const now = Date.now();
+    const last = lastTapRef.current;
+    if (last && last.id === postId && now - last.t < 300) {
+      toggleLike(postId);
+      lastTapRef.current = null;
+    } else {
+      lastTapRef.current = { id: postId, t: now };
     }
   }
 
@@ -1268,14 +1313,18 @@ export default function Home() {
                     </button>
                   </div>
 
-                  {/* Media - better fitting */}
-                  <div className="relative bg-zinc-950 flex items-center justify-center overflow-hidden">
+                  {/* Media — double-tap to like */}
+                  <div
+                    className="relative bg-zinc-950 flex items-center justify-center overflow-hidden"
+                    onClick={() => handleDoubleTapLike(post.id)}
+                  >
                     {post.media_type === "video" ? (
                       <video
                         src={post.media_url}
                         controls
                         playsInline
                         className="w-full max-h-[70vh] object-contain bg-black"
+                        onClick={(e) => e.stopPropagation()}
                       />
                     ) : (
                       <img
@@ -2026,7 +2075,12 @@ export default function Home() {
                         </div>
                         <div className="text-right">
                           <p className="text-pink-400 font-bold text-[14px]">₦{Number(s.price).toLocaleString()}</p>
-                          <button className="text-[11px] text-pink-500 font-medium mt-0.5">Request</button>
+                          <button
+                            onClick={() => requestService(selectedUser.id, s)}
+                            className="text-[11px] text-pink-500 font-medium mt-0.5"
+                          >
+                            Book now
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -2230,34 +2284,32 @@ export default function Home() {
           </div>
         )}
 
-        {/* Call paywall modal */}
-        {callModal && (
+        {/* Call paywall modal — path to money */}
+        {callModal && currentChat && (
           <div className="fixed inset-0 z-[70] bg-black/80 flex items-end sm:items-center justify-center p-4">
             <div className="w-full max-w-sm bg-zinc-900 border border-zinc-700 rounded-2xl p-5">
               <h3 className="text-[17px] font-semibold mb-1">
                 {callModal === "voice" ? "Voice call" : "Video call"}
               </h3>
-              <p className="text-[13px] text-gray-400 mb-4">
+              <p className="text-[13px] text-gray-400 mb-2">
                 {callModal === "voice"
-                  ? "Talk live for ₦10,000 per session."
-                  : "Face-to-face video for ₦20,000 per session."}
+                  ? "Live voice — ₦10,000 per session"
+                  : "Live video — ₦20,000 per session"}
               </p>
               <p className="text-[12px] text-gray-500 mb-4">
-                Payment link is not connected yet. After you pay offline, mark as paid and we will enable live calls.
+                Tap below to request. She will reply with how to pay. Live calling unlocks after payment is confirmed.
               </p>
               <button
-                onClick={() => {
-                  setMessage(
-                    callModal === "voice"
-                      ? "Voice call request noted — ₦10,000. Complete payment to connect."
-                      : "Video call request noted — ₦20,000. Complete payment to connect."
-                  );
+                onClick={async () => {
+                  const kind = callModal === "voice" ? "Voice call" : "Video call";
+                  const price = callModal === "voice" ? "10,000" : "20,000";
+                  const text = `I want to book a ${kind} — ₦${price}. How do I pay?`;
                   setCallModal(null);
+                  await sendMessageText(text, currentChat);
                 }}
                 className="w-full bg-pink-600 py-3 rounded-xl font-semibold text-[14px] mb-2"
               >
-                Request {callModal === "voice" ? "Voice" : "Video"} call — ₦
-                {callModal === "voice" ? "10,000" : "20,000"}
+                Request & pay — ₦{callModal === "voice" ? "10,000" : "20,000"}
               </button>
               <button
                 onClick={() => setCallModal(null)}
