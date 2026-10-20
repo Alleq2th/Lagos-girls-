@@ -1059,7 +1059,7 @@ export default function Home() {
         <header className="sticky top-0 z-50 bg-black/95 backdrop-blur-md border-b border-zinc-900">
           <div className="max-w-lg mx-auto px-4 h-[52px] grid grid-cols-3 items-center">
             <div />
-            <h1 className="text-[20px] font-bold tracking-tight text-pink-500 text-center">
+            <h1 className="text-[20px] font-semibold tracking-tight text-white text-center">
               Lagos Girls
             </h1>
             <div className="flex items-center justify-end">
@@ -1287,32 +1287,55 @@ export default function Home() {
                     )}
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center justify-between px-3.5 pt-2.5 pb-1">
+                  {/* Actions — Instagram style icons */}
+                  <div className="flex items-center justify-between px-3 pt-3 pb-1">
                     <div className="flex items-center gap-4">
                       <button
                         onClick={() => toggleLike(post.id)}
-                        className="flex items-center gap-1.5 active:scale-90 transition-transform"
+                        className="active:scale-90 transition-transform"
+                        aria-label="Like"
                       >
-                        <span className="text-[26px] leading-none">{post.liked_by_me ? "❤️" : "🤍"}</span>
-                        {(post.likes_count || 0) > 0 && (
-                          <span className="text-[13px] font-semibold tabular-nums">{post.likes_count}</span>
+                        {post.liked_by_me ? (
+                          <svg width="26" height="26" viewBox="0 0 24 24" fill="#ed4956">
+                            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                          </svg>
+                        ) : (
+                          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                          </svg>
                         )}
                       </button>
                       <button
                         onClick={() => openComments(post.id)}
-                        className="text-[24px] leading-none active:scale-90 transition-transform"
+                        className="active:scale-90 transition-transform"
+                        aria-label="Comment"
                       >
-                        💬
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                        </svg>
                       </button>
                     </div>
                     <button
                       onClick={() => toggleSave(post.id)}
-                      className="text-[22px] leading-none active:scale-90 transition-transform"
+                      className="active:scale-90 transition-transform"
+                      aria-label="Save"
                     >
-                      {post.saved_by_me ? "🔖" : "📑"}
+                      {post.saved_by_me ? (
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                        </svg>
+                      ) : (
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                        </svg>
+                      )}
                     </button>
                   </div>
+
+                  {/* Likes count */}
+                  {(post.likes_count || 0) > 0 && (
+                    <p className="px-3.5 text-[13px] font-semibold">{post.likes_count} like{(post.likes_count || 0) === 1 ? "" : "s"}</p>
+                  )}
 
                   {/* Caption */}
                   {post.caption && (
@@ -1320,6 +1343,16 @@ export default function Home() {
                       <span className="font-semibold mr-1.5">{post.profiles?.username}</span>
                       <span className="text-gray-100">{post.caption}</span>
                     </p>
+                  )}
+
+                  {/* View comments link */}
+                  {!showComments[post.id] && (post.comments_count || 0) > 0 && (
+                    <button
+                      onClick={() => openComments(post.id)}
+                      className="px-3.5 mt-1 text-[13px] text-gray-500"
+                    >
+                      View all {post.comments_count} comment{(post.comments_count || 0) === 1 ? "" : "s"}
+                    </button>
                   )}
 
                   {/* Comments */}
@@ -2155,22 +2188,38 @@ export default function Home() {
                           )}
                         </div>
                         <div className="absolute bottom-28 right-3 flex flex-col items-center gap-5 z-10">
-                          <button onClick={() => toggleLike(post.id)} className="flex flex-col items-center">
-                            <span className="text-[22px]">{post.liked_by_me ? "❤️" : "🤍"}</span>
-                            <span className="text-[11px]">{post.likes_count || 0}</span>
+                          <button onClick={() => toggleLike(post.id)} className="flex flex-col items-center gap-0.5">
+                            {post.liked_by_me ? (
+                              <svg width="28" height="28" viewBox="0 0 24 24" fill="#ed4956">
+                                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                              </svg>
+                            ) : (
+                              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                              </svg>
+                            )}
+                            <span className="text-[11px] text-white">{post.likes_count || 0}</span>
                           </button>
                           <button
-                            onClick={() =>
-                              setShowComments((s) => ({ ...s, [post.id]: !s[post.id] }))
-                            }
-                            className="flex flex-col items-center"
+                            onClick={() => openComments(post.id)}
+                            className="flex flex-col items-center gap-0.5"
                           >
-                            <span className="text-[22px]">💬</span>
-                            <span className="text-[11px]">{post.comments_count || 0}</span>
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                            </svg>
+                            <span className="text-[11px] text-white">{post.comments_count || 0}</span>
                           </button>
-                          <button onClick={() => toggleSave(post.id)} className="flex flex-col items-center">
-                            <span className="text-[22px]">{post.saved_by_me ? "🔖" : "📑"}</span>
-                            <span className="text-[11px]">Save</span>
+                          <button onClick={() => toggleSave(post.id)} className="flex flex-col items-center gap-0.5">
+                            {post.saved_by_me ? (
+                              <svg width="26" height="26" viewBox="0 0 24 24" fill="white">
+                                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                              </svg>
+                            ) : (
+                              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                              </svg>
+                            )}
+                            <span className="text-[11px] text-white">Save</span>
                           </button>
                         </div>
                       </div>
