@@ -3,6 +3,12 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { smartFeedSort, shuffleArray } from "../lib/algorithm";
+import {
+  getPersonality,
+  generateReply,
+  generateOpener,
+  delayFeel,
+} from "../lib/chatbot";
 import type { Profile, Post, PrivateMedia } from "../types";
 
 export default function Home() {
@@ -455,6 +461,8 @@ export default function Home() {
       .eq("girl_id", girlId)
       .maybeSingle();
 
+    const isNew = !existing;
+
     if (!existing) {
       const { data: newConv, error } = await supabase
         .from("conversations")
@@ -473,8 +481,28 @@ export default function Home() {
     }
 
     setCurrentChat(existing);
-    loadChatMessages(existing.id);
+    await loadChatMessages(existing.id);
     setView("chat");
+
+    // First-time chat: girl sends a short opener after a delay
+    if (isNew && existing) {
+      const girlIdForBot = existing.girl_id;
+      const convId = existing.id;
+      setTimeout(async () => {
+        const personality = getPersonality(girlIdForBot);
+        const opener = generateOpener(personality);
+        await supabase.from("messages").insert({
+          conversation_id: convId,
+          sender_id: girlIdForBot,
+          content: opener,
+        });
+        await supabase
+          .from("conversations")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", convId);
+        loadChatMessages(convId);
+      }, delayFeel());
+    }
   }
 
   async function loadChatMessages(conversationId: string) {
@@ -489,20 +517,50 @@ export default function Home() {
   async function sendMessage() {
     if (!newMessage.trim() || !currentChat || !session) return;
 
+    const text = newMessage.trim();
+    setNewMessage("");
+
     await supabase.from("messages").insert({
       conversation_id: currentChat.id,
       sender_id: session.user.id,
-      content: newMessage.trim(),
+      content: text,
     });
 
-    // Update conversation timestamp
     await supabase
       .from("conversations")
       .update({ updated_at: new Date().toISOString() })
       .eq("id", currentChat.id);
 
-    setNewMessage("");
-    loadChatMessages(currentChat.id);
+    await loadChatMessages(currentChat.id);
+
+    // Auto-reply from the girl account (chatbot)
+    const girlId = currentChat.girl_id;
+    const convId = currentChat.id;
+    if (girlId && girlId !== session.user.id) {
+      const personality = getPersonality(girlId);
+      // build short history for context
+      const history = (chatMessages || [])
+        .slice(-8)
+        .map((m: any) => ({
+          role: (m.sender_id === session.user.id ? "user" : "girl") as "user" | "girl",
+          text: m.content || "",
+        }));
+      history.push({ role: "user", text });
+
+      setTimeout(async () => {
+        const reply = generateReply(text, personality, history);
+        await supabase.from("messages").insert({
+          conversation_id: convId,
+          sender_id: girlId,
+          content: reply,
+        });
+        await supabase
+          .from("conversations")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", convId);
+        loadChatMessages(convId);
+      }, delayFeel());
+    }
   }
 
   // ========== AUTH ==========
