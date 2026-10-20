@@ -1835,12 +1835,19 @@ export default function Home() {
                 <p className="text-[12.5px] text-gray-500 mt-1.5">📍 {selectedUser.location}</p>
               )}
 
-              {profile?.is_premium && selectedUser.role === "GIRL" && (
+              {/* Message anyone (not yourself). Premium required to actually start chat. */}
+              {session && selectedUser.id !== session.user.id && (
                 <button
-                  onClick={() => startChat(selectedUser.id)}
+                  onClick={() => {
+                    if (!profile?.is_premium) {
+                      setMessage("Become Premium (₦5,000) to message girls");
+                      return;
+                    }
+                    startChat(selectedUser.id);
+                  }}
                   className="w-full bg-pink-600 hover:bg-pink-500 py-3 rounded-xl font-semibold mt-4 text-[14px]"
                 >
-                  Message
+                  {profile?.is_premium ? "Message" : "Message (Premium)"}
                 </button>
               )}
             </div>
