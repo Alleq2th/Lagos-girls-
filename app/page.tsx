@@ -14,7 +14,21 @@ import type { Profile, Post, PrivateMedia } from "../types";
 export default function Home() {
   const [session, setSession] = useState<any>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [view, setView] = useState<"age" | "auth" | "feed" | "profile" | "create" | "user" | "edit" | "terms" | "saved" | "messages" | "chat">("age");
+  const [view, setView] = useState<
+    | "age"
+    | "auth"
+    | "feed"
+    | "reels"
+    | "search"
+    | "profile"
+    | "create"
+    | "user"
+    | "edit"
+    | "terms"
+    | "saved"
+    | "messages"
+    | "chat"
+  >("age");
   const [posts, setPosts] = useState<any[]>([]);
   const [stories, setStories] = useState<any[]>([]);
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
@@ -1032,44 +1046,31 @@ export default function Home() {
       </div>
     );
   }
-    // ========== MAIN APP ==========
+    const showBottomNav = !["age", "auth", "terms", "chat"].includes(view);
+  const showTopBar = !["age", "auth", "terms", "chat", "reels"].includes(view);
+
+  // ========== MAIN APP ==========
   return (
-    <div className="min-h-screen bg-black pb-24">
-      {/* HEADER */}
-      <header className="sticky top-0 z-50 bg-black/95 backdrop-blur-md border-b border-zinc-900">
-        <div className="max-w-lg mx-auto px-4 h-[52px] flex items-center justify-between">
-          <h1 className="text-[22px] font-bold tracking-tight text-pink-500">Lagos Girls</h1>
-          <div className="flex items-center gap-5 text-[13.5px] font-medium">
-            <button
-              onClick={() => setView("feed")}
-              className={`transition-colors ${view === "feed" ? "text-pink-500" : "text-gray-400 hover:text-gray-200"}`}
-            >
-              Feed
-            </button>
-            <button
-              onClick={() => setView("create")}
-              className={`transition-colors ${view === "create" ? "text-pink-500" : "text-gray-400 hover:text-gray-200"}`}
-            >
-              Post
-            </button>
-            <button
-              onClick={() => setView("messages")}
-              className={`transition-colors ${view === "messages" || view === "chat" ? "text-pink-500" : "text-gray-400 hover:text-gray-200"}`}
-            >
-              Messages
-            </button>
-            <button
-              onClick={() => {
-                setView("profile");
-                if (session) ensureProfile(session.user);
-              }}
-              className={`transition-colors ${view === "profile" || view === "saved" ? "text-pink-500" : "text-gray-400 hover:text-gray-200"}`}
-            >
-              Me
-            </button>
+    <div className="min-h-screen bg-black pb-20">
+      {/* TOP BAR — Instagram style */}
+      {showTopBar && (
+        <header className="sticky top-0 z-50 bg-black/95 backdrop-blur-md border-b border-zinc-900">
+          <div className="max-w-lg mx-auto px-4 h-[52px] flex items-center justify-between">
+            <h1 className="text-[22px] font-bold tracking-tight text-pink-500">Lagos Girls</h1>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setView("messages")}
+                className={`${view === "messages" ? "text-pink-500" : "text-white"}`}
+                aria-label="Messages"
+              >
+                <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+              </button>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       <main className="max-w-lg mx-auto">
         {message && (
@@ -1566,10 +1567,29 @@ export default function Home() {
 
         {/* ========== CHAT ========== */}
         {view === "chat" && currentChat && (
-          <div className="fixed inset-0 top-14 z-40 bg-black flex flex-col">
+          <div className="fixed inset-0 z-40 bg-black flex flex-col">
             <div className="px-4 py-3 border-b border-zinc-800 flex items-center gap-3 shrink-0">
-              <button onClick={() => setView("messages")} className="text-pink-500 text-[15px]">← Back</button>
-              <span className="font-medium text-[15px]">Chat</span>
+              <button onClick={() => setView("messages")} className="text-pink-500 text-[15px]">←</button>
+              <span className="font-medium text-[15px] flex-1">Chat</span>
+              <button
+                onClick={() => setMessage("Voice call — ₦10,000. Payment coming soon.")}
+                className="text-white p-1"
+                title="Voice call ₦10,000"
+              >
+                <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setMessage("Video call — ₦20,000. Payment coming soon.")}
+                className="text-white p-1"
+                title="Video call ₦20,000"
+              >
+                <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path d="M23 7l-7 5 7 5V7z" />
+                  <rect x="1" y="5" width="15" height="14" rx="2" />
+                </svg>
+              </button>
             </div>
             <div
               ref={chatScrollRef}
@@ -2056,7 +2076,191 @@ export default function Home() {
             )}
           </div>
         )}
+
+        {/* ========== REELS — videos only full screen ========== */}
+        {view === "reels" && (
+          <div className="fixed inset-0 z-30 bg-black overflow-y-scroll snap-y snap-mandatory">
+            {posts.filter((p) => p.media_type === "video").length === 0 ? (
+              <div className="h-full flex items-center justify-center text-gray-500 text-[14px] px-6 text-center">
+                No videos yet. Post a video to see it here.
+              </div>
+            ) : (
+              posts
+                .filter((p) => p.media_type === "video")
+                .map((post) => (
+                  <div
+                    key={post.id}
+                    className="h-[100dvh] w-full snap-start relative flex items-center justify-center bg-black"
+                  >
+                    <video
+                      src={post.media_url}
+                      className="absolute inset-0 w-full h-full object-cover"
+                      loop
+                      playsInline
+                      muted
+                      autoPlay
+                    />
+                    <div className="absolute bottom-24 left-0 right-16 px-4 z-10">
+                      <button
+                        onClick={() => openUserProfile(post.user_id)}
+                        className="font-semibold text-[14px] mb-1"
+                      >
+                        @{post.profiles?.username}
+                      </button>
+                      {post.caption && (
+                        <p className="text-[13px] text-gray-200 line-clamp-2">{post.caption}</p>
+                      )}
+                    </div>
+                    <div className="absolute bottom-28 right-3 flex flex-col items-center gap-5 z-10">
+                      <button onClick={() => toggleLike(post.id)} className="flex flex-col items-center">
+                        <span className="text-[22px]">{post.liked_by_me ? "❤️" : "🤍"}</span>
+                        <span className="text-[11px]">{post.likes_count || 0}</span>
+                      </button>
+                      <button
+                        onClick={() =>
+                          setShowComments((s) => ({ ...s, [post.id]: !s[post.id] }))
+                        }
+                        className="flex flex-col items-center"
+                      >
+                        <span className="text-[22px]">💬</span>
+                        <span className="text-[11px]">{post.comments_count || 0}</span>
+                      </button>
+                    </div>
+                  </div>
+                ))
+            )}
+          </div>
+        )}
+
+        {/* ========== SEARCH / EXPLORE ========== */}
+        {view === "search" && (
+          <div className="p-4">
+            <input
+              type="text"
+              placeholder="Search girls, names..."
+              value={userSearch}
+              onChange={(e) => searchUsers(e.target.value)}
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-[14px] mb-4"
+            />
+            {searchResults.length > 0 ? (
+              <div className="space-y-2 mb-6">
+                {searchResults.map((u) => (
+                  <div
+                    key={u.id}
+                    onClick={() => openUserProfile(u.id)}
+                    className="flex items-center gap-3 p-2 rounded-xl active:bg-zinc-900 cursor-pointer"
+                  >
+                    <div className="w-12 h-12 rounded-full bg-zinc-800 overflow-hidden">
+                      {u.avatar_url ? (
+                        <img src={u.avatar_url} className="w-full h-full object-cover" alt="" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center font-bold">
+                          {(u.username || "?")[0].toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-medium text-[14px]">{u.display_name || u.username}</p>
+                      <p className="text-[12px] text-gray-500">@{u.username}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-[2px]">
+                {posts.map((p) => (
+                  <div
+                    key={p.id}
+                    className="aspect-square bg-zinc-900 overflow-hidden cursor-pointer"
+                    onClick={() => setViewingPost(p)}
+                  >
+                    {p.media_type === "video" ? (
+                      <video src={p.media_url} className="w-full h-full object-cover" muted playsInline />
+                    ) : (
+                      <img src={p.media_url} className="w-full h-full object-cover" alt="" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </main>
+
+      {/* BOTTOM NAV — Instagram style */}
+      {showBottomNav && (
+        <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black border-t border-zinc-900 pb-[env(safe-area-inset-bottom)]">
+          <div className="max-w-lg mx-auto flex items-center justify-around h-14">
+            <button
+              onClick={() => setView("feed")}
+              className={view === "feed" ? "text-white" : "text-gray-500"}
+              aria-label="Home"
+            >
+              <svg width="26" height="26" fill={view === "feed" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V9.5z" />
+              </svg>
+            </button>
+            <button
+              onClick={() => {
+                setView("search");
+                if (posts.length === 0) loadPosts();
+              }}
+              className={view === "search" ? "text-white" : "text-gray-500"}
+              aria-label="Search"
+            >
+              <svg width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="7" />
+                <path d="M21 21l-4.3-4.3" />
+              </svg>
+            </button>
+            <button
+              onClick={() => setView("create")}
+              className={view === "create" ? "text-white" : "text-gray-500"}
+              aria-label="Post"
+            >
+              <svg width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <rect x="3" y="3" width="18" height="18" rx="3" />
+                <path d="M12 8v8M8 12h8" />
+              </svg>
+            </button>
+            <button
+              onClick={() => {
+                setView("reels");
+                if (posts.length === 0) loadPosts();
+              }}
+              className={view === "reels" ? "text-white" : "text-gray-500"}
+              aria-label="Reels"
+            >
+              <svg width="26" height="26" fill={view === "reels" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <rect x="3" y="3" width="18" height="18" rx="3" />
+                <path d="M10 8l6 4-6 4V8z" />
+              </svg>
+            </button>
+            <button
+              onClick={() => {
+                setView("profile");
+                if (session) ensureProfile(session.user);
+              }}
+              className={view === "profile" || view === "saved" ? "text-white" : "text-gray-500"}
+              aria-label="Profile"
+            >
+              <div
+                className={`w-7 h-7 rounded-full overflow-hidden border-2 ${
+                  view === "profile" ? "border-white" : "border-transparent"
+                } bg-zinc-800`}
+              >
+                {profile?.avatar_url ? (
+                  <img src={profile.avatar_url} className="w-full h-full object-cover" alt="" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-[10px]">
+                    {(profile?.username || "?")[0].toUpperCase()}
+                  </div>
+                )}
+              </div>
+            </button>
+          </div>
+        </nav>
+      )}
     </div>
   );
 }
