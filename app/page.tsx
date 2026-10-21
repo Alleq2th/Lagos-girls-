@@ -5,6 +5,7 @@ import { supabase } from "../lib/supabase";
 import { smartFeedSort, shuffleArray } from "../lib/algorithm";
 import {
   getPersonality,
+  getPersonalityTraits,
   generateReply,
   generateOpener,
   delayFeel,
@@ -855,8 +856,9 @@ export default function Home() {
     const convId = chat.id;
     if (girlId && girlId !== session.user.id) {
       const personality = getPersonality(girlId);
+      const traits = getPersonalityTraits(girlId);
       const history = (chatMessages || [])
-        .slice(-8)
+        .slice(-14)
         .map((m: any) => ({
           role: (m.sender_id === session.user.id ? "user" : "girl") as "user" | "girl",
           text: m.content || "",
@@ -864,23 +866,51 @@ export default function Home() {
       history.push({ role: "user", text: body });
 
       const girlName = chat.girl?.display_name || chat.girl?.username || undefined;
+      const paymentHint = getPaymentInstructions();
 
       setTimeout(async () => {
-        let reply = generateReply(body, personality, history, girlName);
-        // Money path: if they ask how to pay / book, attach payment steps
-        const low = body.toLowerCase();
-        if (
-          low.includes("pay") ||
-          low.includes("book") ||
-          low.includes("transfer") ||
-          low.includes("account") ||
-          low.includes("how much")
-        ) {
-          const pay = getPaymentInstructions();
-          if (pay && !reply.toLowerCase().includes("opay") && !reply.toLowerCase().includes("monie")) {
-            reply = `${reply}\n\n${pay}`;
+        let reply = "";
+        try {
+          const res = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              message: body,
+              history,
+              girlName,
+              traits,
+              paymentHint,
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data?.reply) {
+            reply = String(data.reply).trim();
+          }
+        } catch {
+          /* use fallback */
+        }
+
+        // Offline / API fallback — still works for every existing girl
+        if (!reply) {
+          reply = generateReply(body, personality, history, girlName);
+          const low = body.toLowerCase();
+          if (
+            low.includes("pay") ||
+            low.includes("book") ||
+            low.includes("transfer") ||
+            low.includes("account") ||
+            low.includes("how much")
+          ) {
+            if (
+              paymentHint &&
+              !reply.toLowerCase().includes("opay") &&
+              !reply.toLowerCase().includes("monie")
+            ) {
+              reply = `${reply}\n\n${paymentHint}`;
+            }
           }
         }
+
         await supabase.from("messages").insert({
           conversation_id: convId,
           sender_id: girlId,
