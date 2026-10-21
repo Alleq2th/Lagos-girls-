@@ -419,3 +419,30 @@ export function generateReply(
 export function generateOpener(personality: ChatPersonality): string {
   return pick(R.greet[personality]);
 }
+
+/** Continuous traits 0–1 from girl id — every existing account gets unique mix */
+export function getPersonalityTraits(seed: string): {
+  warmth: number;
+  playfulness: number;
+  affection: number;
+  flirt: number;
+  sexual: number;
+  initiative: number;
+  expressiveness: number;
+} {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h + seed.charCodeAt(i) * (i + 3)) % 10007;
+  const n = (offset: number) => {
+    const x = (h * (offset + 7) + offset * 97) % 1000;
+    return 0.55 + (x / 1000) * 0.4; // 0.55–0.95
+  };
+  return {
+    warmth: n(1),
+    playfulness: n(2),
+    affection: n(3),
+    flirt: Math.min(0.98, n(4) + 0.1),
+    sexual: Math.min(0.95, n(5) + 0.05),
+    initiative: n(6),
+    expressiveness: n(7),
+  };
+}
