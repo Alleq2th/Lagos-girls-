@@ -44,12 +44,12 @@ const INTENT_KEYS: Record<Intent, string[]> = {
   name: ["your name", "ur name", "whats your name", "what's your name", "what is your name", "who are you", "real name"],
   location: ["where are you", "where you stay", "where you live", "location", "which area", "island", "mainland"],
   services: ["services", "service", "video call", "custom video", "private chat", "what do you offer"],
-  pay: ["how can i pay", "how do i pay", "payment", "pay", "transfer", "account number", "how much", "price", "book"],
+  pay: ["how can i pay", "how do i pay", "payment", "pay", "transfer", "account number", "how much", "price", "book", "i want to book", "join"],
   serious: ["im serious", "i'm serious", "i am serious", "for real", "fr fr", "i mean it", "ofc i'm serious", "of course"],
   naughty: ["fuck", "sex", "dick", "pussy", "ass", "boobs", "nudes", "nude", "horny", "wet", "cum", "suck", "ride", "bang", "naked"],
   sexchat: ["sex chat", "sext", "dirty talk", "naughty chat", "talk dirty"],
   compliment: ["beautiful", "fine girl", "sexy", "hot", "pretty", "cute", "baddie", "gorgeous", "fine", "looking good"],
-  greet: ["hi", "hey", "hello", "hii", "heyy", "good morning", "good evening", "good afternoon"],
+  greet: ["hi", "hey", "hello", "hii", "heyy", "good morning", "good evening", "good afternoon", "how was your night", "how was the night", "morning", "gm"],
   love: ["love you", "miss you", "i like you"],
   age: ["how old", "your age", "ur age"],
   photo: ["send photo", "send pic", "picture", "selfie", "show me"],
@@ -85,10 +85,27 @@ function detectIntent(msg: string): Intent {
 
 const R: Record<Intent, Record<ChatPersonality, string[]>> = {
   greet: {
-    soft: ["heyyy", "hi baby", "hey you", "hii", "heyy how are you"],
-    sweet: ["heyyy 💕", "hi love", "hey handsome", "hii whats up"],
-    tease: ["heyy", "hi stranger", "look who texted", "heyyy you"],
-    spicy: ["heyyy", "hi", "hey you finally", "hii"],
+    soft: [
+      "heyyy good morning",
+      "hi baby",
+      "morningg how did you sleep",
+      "heyy you",
+      "hii how was your night",
+    ],
+    sweet: [
+      "heyyy 💕",
+      "good morning love",
+      "hi handsome how was the night",
+      "morningg",
+      "hii whats up",
+    ],
+    tease: [
+      "heyy look who woke up",
+      "morning stranger",
+      "hi you finally texted",
+      "heyyy you",
+    ],
+    spicy: ["heyyy", "morningg", "hi you", "hii how was your night"],
   },
   how_are: {
     soft: [
@@ -366,32 +383,28 @@ const R: Record<Intent, Record<ChatPersonality, string[]>> = {
   },
   fallback: {
     soft: [
-      "hmm tell me more",
-      "okayy im listening",
-      "what else is on your mind",
-      "continue baby",
-      "mmm go on",
+      "okayy tell me more about that",
+      "hmm and how did that make you feel",
+      "im listening what happened next",
+      "wait really explain small",
     ],
     sweet: [
-      "really",
-      "im listening love",
-      "keep talking",
-      "and then",
-      "tell me more",
+      "aww tell me everything",
+      "im here what else",
+      "that sounds like a story keep going",
+      "okay love and then",
     ],
     tease: [
-      "is that so",
-      "go on",
-      "hmm",
-      "dont leave me hanging",
-      "and you",
+      "is that the whole story",
+      "hmm prove it tell me more",
+      "dont stop there",
+      "okay and you",
     ],
     spicy: [
-      "okay and",
-      "say more",
-      "im here",
-      "continue",
-      "interesting",
+      "mmm keep talking",
+      "i like where this is going",
+      "say more baby",
+      "dont leave me hanging",
     ],
   },
 };
@@ -402,6 +415,7 @@ export function generateReply(
   _history: { role: "user" | "girl"; text: string }[] = [],
   girlName?: string
 ): string {
+  const t = lower(userMessage);
   const intent = detectIntent(userMessage);
 
   if (intent === "name" && girlName) {
@@ -409,6 +423,31 @@ export function generateReply(
       `they call me ${girlName}`,
       `its ${girlName} baby`,
       `${girlName} like on my profile`,
+    ]);
+  }
+
+  // Direct answers so "good morning" never becomes "continue baby"
+  if (t.includes("good morning") || t === "morning" || t === "gm") {
+    return pick([
+      "good morningg",
+      "morning baby how did you sleep",
+      "heyyy morning",
+      "morningg how are you",
+    ]);
+  }
+  if (t.includes("how was your night") || t.includes("how was the night")) {
+    return pick([
+      "it was okay slept late what about yours",
+      "quiet night just on my phone yours",
+      "finee a bit restless though how was yours",
+      "not bad baby yours",
+    ]);
+  }
+  if (t.includes("how is ur day") || t.includes("how is your day") || t.includes("how's your day")) {
+    return pick([
+      "its going soft so far hows yours",
+      "still early but im good yours",
+      "chilling for now what about you",
     ]);
   }
 
