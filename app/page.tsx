@@ -866,7 +866,20 @@ export default function Home() {
       history.push({ role: "user", text: body });
 
       const girlName = chat.girl?.display_name || chat.girl?.username || undefined;
-      const paymentHint = getPaymentInstructions();
+
+      // Services for this girl only (names/prices) — NEVER dump admin bank accounts in chat
+      let servicesList: { name: string; price: number }[] = [];
+      try {
+        const raw = chat.girl?.services || (chat as any).profiles?.services;
+        if (raw) {
+          const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+          if (Array.isArray(parsed)) {
+            servicesList = parsed
+              .map((s: any) => ({ name: String(s.name || ""), price: Number(s.price) || 0 }))
+              .filter((s: any) => s.name);
+          }
+        }
+      } catch {}
 
       setTimeout(async () => {
         let reply = "";
@@ -879,36 +892,34 @@ export default function Home() {
               history,
               girlName,
               traits,
-              paymentHint,
+              services: servicesList,
             }),
           });
           const data = await res.json().catch(() => ({}));
           if (res.ok && data?.reply) {
             reply = String(data.reply).trim();
+          } else if (data?.error) {
+            console.warn("chat api:", data.error);
           }
-        } catch {
-          /* use fallback */
+        } catch (e) {
+          console.warn("chat api failed", e);
         }
 
-        // Offline / API fallback — still works for every existing girl
+        // Offline fallback only if Groq failed — never paste OPay/Moniepoint into chat
         if (!reply) {
           reply = generateReply(body, personality, history, girlName);
-          const low = body.toLowerCase();
-          if (
-            low.includes("pay") ||
-            low.includes("book") ||
-            low.includes("transfer") ||
-            low.includes("account") ||
-            low.includes("how much")
-          ) {
-            if (
-              paymentHint &&
-              !reply.toLowerCase().includes("opay") &&
-              !reply.toLowerCase().includes("monie")
-            ) {
-              reply = `${reply}\n\n${paymentHint}`;
-            }
-          }
+        }
+
+        // Strip any leaked account dumps if model still outputs them
+        reply = reply
+          .replace(/Pay to:[\s\S]{0,400}/gi, "")
+          .replace(/OPay\s*:\s*\d+/gi, "")
+          .replace(/Moniepoint\s*:\s*\d+/gi, "")
+          .replace(/USDT TRC20[^\n]*/gi, "")
+          .trim();
+
+        if (!reply) {
+          reply = generateReply(body, personality, history, girlName);
         }
 
         await supabase.from("messages").insert({
