@@ -145,41 +145,55 @@ export async function POST(req: NextRequest) {
       messages.push({ role: "user", content: message.trim() });
     }
 
-    // Prefer strong model, fall back to faster one
-    let res = await callGroq(apiKey, messages, "llama-3.3-70b-versatile");
-    if (!res.ok) {
-      res = await callGroq(apiKey, messages, "llama-3.1-8b-instant");
+    // Free-tier models first — Llama 3.x is often Enterprise-only on Groq now
+    const models = [
+      "openai/gpt-oss-20b",
+      "openai/gpt-oss-120b",
+      "llama-3.1-8b-instant",
+      "llama-3.3-70b-versatile",
+    ];
+
+    let lastStatus = 0;
+    let lastErr = "";
+
+    for (const model of models) {
+      const res = await callGroq(apiKey, messages, model);
+      lastStatus = res.status;
+      if (!res.ok) {
+        lastErr = await res.text().catch(() => "");
+        console.error("Groq model failed", model, res.status, lastErr.slice(0, 300));
+        continue;
+      }
+
+      const data = await res.json();
+      let reply =
+        data?.choices?.[0]?.message?.content?.trim() ||
+        data?.choices?.[0]?.text?.trim() ||
+        "";
+
+      reply = reply
+        .replace(/^["']|["']$/g, "")
+        .replace(/^(as an ai|i'm an ai|i am an ai).*/i, "")
+        .replace(/Pay to:[\s\S]{0,500}/gi, "")
+        .replace(/OPay\s*:\s*\d+/gi, "")
+        .replace(/Moniepoint\s*:\s*\d+/gi, "")
+        .replace(/USDT TRC20[^\n]*/gi, "")
+        .trim();
+
+      if (reply) {
+        return NextResponse.json({ reply, model });
+      }
     }
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "");
-      console.error("Groq error", res.status, errText);
-      return NextResponse.json(
-        { error: "groq_failed", status: res.status, fallback: true },
-        { status: 502 }
-      );
-    }
-
-    const data = await res.json();
-    let reply =
-      data?.choices?.[0]?.message?.content?.trim() ||
-      data?.choices?.[0]?.text?.trim() ||
-      "";
-
-    reply = reply
-      .replace(/^["']|["']$/g, "")
-      .replace(/^(as an ai|i'm an ai|i am an ai).*/i, "")
-      .replace(/Pay to:[\s\S]{0,500}/gi, "")
-      .replace(/OPay\s*:\s*\d+/gi, "")
-      .replace(/Moniepoint\s*:\s*\d+/gi, "")
-      .replace(/USDT TRC20[^\n]*/gi, "")
-      .trim();
-
-    if (!reply) {
-      return NextResponse.json({ error: "empty", fallback: true }, { status: 502 });
-    }
-
-    return NextResponse.json({ reply });
+    return NextResponse.json(
+      {
+        error: "groq_failed",
+        status: lastStatus,
+        detail: lastErr.slice(0, 200),
+        fallback: true,
+      },
+      { status: 502 }
+    );
   } catch (e: any) {
     console.error("chat route", e);
     return NextResponse.json({ error: e?.message || "server_error", fallback: true }, { status: 500 });
