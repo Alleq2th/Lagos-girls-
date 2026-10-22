@@ -412,11 +412,13 @@ const R: Record<Intent, Record<ChatPersonality, string[]>> = {
 export function generateReply(
   userMessage: string,
   personality: ChatPersonality,
-  _history: { role: "user" | "girl"; text: string }[] = [],
+  history: { role: "user" | "girl"; text: string }[] = [],
   girlName?: string
 ): string {
   const t = lower(userMessage);
   const intent = detectIntent(userMessage);
+  const lastGirl = [...history].reverse().find((m) => m.role === "girl")?.text || "";
+  const lastGirlLow = lower(lastGirl);
 
   if (intent === "name" && girlName) {
     return pick([
@@ -426,7 +428,24 @@ export function generateReply(
     ]);
   }
 
-  // Direct answers so "good morning" never becomes "continue baby"
+  if (
+    t.includes("not morning") ||
+    t.includes("its not morning") ||
+    t.includes("it's not morning") ||
+    (t.includes("not") && t.includes("morning"))
+  ) {
+    return pick([
+      "lol fair what are you on now",
+      "okayyy my bad hows your day going then",
+      "alright then tell me what youve been doing",
+      "hmm okay so how are you feeling right now",
+    ]);
+  }
+
+  if (t === "tf" || t === "wtf" || t === "lol" || t === "lmao") {
+    return pick(["what 😭", "why you saying that", "hmm talk to me", "lol what happened"]);
+  }
+
   if (t.includes("good morning") || t === "morning" || t === "gm") {
     return pick([
       "good morningg",
@@ -449,6 +468,16 @@ export function generateReply(
       "still early but im good yours",
       "chilling for now what about you",
     ]);
+  }
+
+  if (lastGirlLow.includes("how was the night") || lastGirlLow.includes("how was your night")) {
+    if (t.length < 50) {
+      return pick([
+        "okay and how are you feeling now",
+        "cool what are you doing",
+        "mmm tell me something interesting",
+      ]);
+    }
   }
 
   const bank = R[intent]?.[personality] || R.fallback[personality];
