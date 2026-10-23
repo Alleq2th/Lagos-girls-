@@ -1198,6 +1198,30 @@ export default function Home() {
     return data.publicUrl;
   }
 
+  function parsePrivateItems(mediaUrl: string, mediaType?: string): { url: string; type: "image" | "video" }[] {
+    if (!mediaUrl) return [];
+    const trimmed = mediaUrl.trim();
+    if (trimmed.startsWith("[")) {
+      try {
+        const arr = JSON.parse(trimmed);
+        if (Array.isArray(arr)) {
+          return arr
+            .map((x: any) => ({
+              url: String(x.url || x.media_url || ""),
+              type: (x.type || x.media_type || "image") as "image" | "video",
+            }))
+            .filter((x) => x.url);
+        }
+      } catch {}
+    }
+    return [
+      {
+        url: mediaUrl,
+        type: mediaType === "video" ? "video" : "image",
+      },
+    ];
+  }
+
   async function handleCreatePost() {
     if (!session || files.length === 0) return setMessage("Select at least one file");
 
@@ -1205,35 +1229,55 @@ export default function Home() {
     setMessage("");
 
     try {
-      for (const file of files) {
-        const mediaType = file.type.startsWith("video") ? "video" : "image";
-        const mediaUrl = await uploadFile(file);
-
-        if (isStory) {
-          await supabase.from("stories").insert({
-            user_id: session.user.id,
-            media_url: mediaUrl,
-            media_type: mediaType,
-          });
-        } else if (isPrivate) {
-          await supabase.from("private_media").insert({
-            user_id: session.user.id,
-            title: title || "Private Content",
-            media_url: mediaUrl,
-            media_type: mediaType,
-            price,
-          });
-        } else {
-          await supabase.from("posts").insert({
-            user_id: session.user.id,
-            caption: files.length === 1 ? caption : caption || null,
-            media_url: mediaUrl,
-            media_type: mediaType,
-          });
+      if (isPrivate && !isStory) {
+        // Private: single OR bundle (multiple files → one price)
+        const items: { url: string; type: "image" | "video" }[] = [];
+        for (const file of files) {
+          const mediaType = file.type.startsWith("video") ? "video" : "image";
+          const mediaUrl = await uploadFile(file);
+          items.push({ url: mediaUrl, type: mediaType });
         }
+        const isBundle = items.length > 1;
+        // media_type stays image/video for DB compatibility; bundle = JSON in media_url
+        await supabase.from("private_media").insert({
+          user_id: session.user.id,
+          title:
+            title ||
+            (isBundle
+              ? `Bundle · ${items.length} items`
+              : "Private Content"),
+          media_url: isBundle ? JSON.stringify(items) : items[0].url,
+          media_type: items[0].type,
+          price,
+        });
+        setMessage(
+          isBundle
+            ? `Bundle of ${items.length} uploaded for ₦${Number(price).toLocaleString()}!`
+            : "Private content uploaded!"
+        );
+      } else {
+        for (const file of files) {
+          const mediaType = file.type.startsWith("video") ? "video" : "image";
+          const mediaUrl = await uploadFile(file);
+
+          if (isStory) {
+            await supabase.from("stories").insert({
+              user_id: session.user.id,
+              media_url: mediaUrl,
+              media_type: mediaType,
+            });
+          } else {
+            await supabase.from("posts").insert({
+              user_id: session.user.id,
+              caption: files.length === 1 ? caption : caption || null,
+              media_url: mediaUrl,
+              media_type: mediaType,
+            });
+          }
+        }
+        setMessage(isStory ? "Added to Story!" : "Posted!");
       }
 
-      setMessage(isStory ? "Added to Story!" : isPrivate ? "Private content uploaded!" : "Posted!");
       setFiles([]);
       setPreviews([]);
       setCaption("");
@@ -1920,7 +1964,7 @@ export default function Home() {
               <div className="space-y-3">
                 <input
                   type="text"
-                  placeholder="Title for private content"
+                  placeholder="Title (e.g. Dance pack, 3 videos)"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-[14px] placeholder:text-gray-500"
@@ -1934,6 +1978,17 @@ export default function Home() {
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-8 pr-4 py-3 text-[14px]"
                   />
                 </div>
+                <p className="text-[12px] text-gray-500">
+                  Select <span className="text-gray-300">one file</span> = single unlock. Select{" "}
+                  <span className="text-gray-300">several photos/videos</span> = one{" "}
+                  <span className="text-pink-400 font-medium">bundle</span> sold together for this
+                  price.
+                </p>
+                {files.length > 1 && (
+                  <p className="text-[12px] text-pink-400 font-medium">
+                    Bundle mode: {files.length} items → ₦{Number(price).toLocaleString()}
+                  </p>
+                )}
               </div>
             )}
 
@@ -2675,29 +2730,42 @@ export default function Home() {
                 <div className="px-4 grid grid-cols-2 gap-3 pb-4">
                   {userPrivate.map((m) => {
                     const open = unlockedIds.includes(m.id);
+                    const items = parsePrivateItems(m.media_url, m.media_type);
+                    const first = items[0];
+                    const isBundle = items.length > 1 || m.media_type === "bundle";
                     return (
                       <button
                         key={m.id}
                         type="button"
                         onClick={() => {
-                          if (open) setViewingPost({ ...m, caption: m.title });
-                          else setUnlockTarget(m);
+                          if (open) {
+                            setViewingPost({
+                              ...m,
+                              caption: m.title,
+                              _bundleItems: items,
+                            });
+                          } else setUnlockTarget({ ...m, _bundleCount: items.length });
                         }}
                         className="relative rounded-xl overflow-hidden bg-zinc-900 text-left"
                       >
-                        {m.media_type === "video" ? (
+                        {first?.type === "video" ? (
                           <video
-                            src={m.media_url}
+                            src={first.url}
                             className={`w-full aspect-[3/4] object-cover ${open ? "" : "blur-md scale-105"}`}
                             muted
                             playsInline
                           />
                         ) : (
                           <img
-                            src={m.media_url}
+                            src={first?.url || m.media_url}
                             className={`w-full aspect-[3/4] object-cover ${open ? "" : "blur-md scale-105"}`}
                             alt=""
                           />
+                        )}
+                        {isBundle && (
+                          <span className="absolute top-2 left-2 text-[10px] bg-black/75 px-2 py-0.5 rounded-full text-white font-medium">
+                            Bundle · {items.length}
+                          </span>
                         )}
                         {!open && (
                           <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center p-2">
@@ -2706,7 +2774,7 @@ export default function Home() {
                               ₦{Number(m.price).toLocaleString()}
                             </p>
                             <span className="mt-2 text-[11px] bg-pink-600 px-3 py-1 rounded-full font-semibold">
-                              Unlock
+                              Unlock{isBundle ? ` · ${items.length} items` : ""}
                             </span>
                           </div>
                         )}
@@ -2718,7 +2786,7 @@ export default function Home() {
             )}
           </div>
         )}
-      {/* Full post viewer when tapping a grid post */}
+      {/* Full post / private / bundle viewer */}
         {viewingPost && (
           <div
             className="fixed inset-0 z-50 bg-black/95 flex flex-col"
@@ -2728,27 +2796,58 @@ export default function Home() {
               <button onClick={() => setViewingPost(null)} className="text-white text-[15px]">
                 Close
               </button>
-              <span className="text-gray-400 text-[13px]">Post</span>
+              <span className="text-gray-400 text-[13px]">
+                {Array.isArray((viewingPost as any)._bundleItems) &&
+                (viewingPost as any)._bundleItems.length > 1
+                  ? `Bundle · ${(viewingPost as any)._bundleItems.length}`
+                  : "Post"}
+              </span>
               <span className="w-12" />
             </div>
             <div
-              className="flex-1 flex items-center justify-center p-2"
+              className="flex-1 overflow-y-auto p-2 space-y-3"
               onClick={(e) => e.stopPropagation()}
             >
-              {viewingPost.media_type === "video" ? (
-                <video
-                  src={viewingPost.media_url}
-                  className="max-h-[80vh] max-w-full rounded-lg"
-                  controls
-                  autoPlay
-                  playsInline
-                />
+              {Array.isArray((viewingPost as any)._bundleItems) &&
+              (viewingPost as any)._bundleItems.length > 0 ? (
+                (viewingPost as any)._bundleItems.map(
+                  (item: { url: string; type: string }, idx: number) => (
+                    <div key={idx} className="flex justify-center">
+                      {item.type === "video" ? (
+                        <video
+                          src={item.url}
+                          className="max-h-[70vh] max-w-full rounded-lg"
+                          controls
+                          playsInline
+                        />
+                      ) : (
+                        <img
+                          src={item.url}
+                          className="max-h-[70vh] max-w-full object-contain rounded-lg"
+                          alt=""
+                        />
+                      )}
+                    </div>
+                  )
+                )
+              ) : viewingPost.media_type === "video" ? (
+                <div className="flex justify-center">
+                  <video
+                    src={viewingPost.media_url}
+                    className="max-h-[80vh] max-w-full rounded-lg"
+                    controls
+                    autoPlay
+                    playsInline
+                  />
+                </div>
               ) : (
-                <img
-                  src={viewingPost.media_url}
-                  className="max-h-[80vh] max-w-full object-contain rounded-lg"
-                  alt=""
-                />
+                <div className="flex justify-center">
+                  <img
+                    src={viewingPost.media_url}
+                    className="max-h-[80vh] max-w-full object-contain rounded-lg"
+                    alt=""
+                  />
+                </div>
               )}
             </div>
             {viewingPost.caption && (
@@ -2949,6 +3048,11 @@ export default function Home() {
               <h3 className="text-[17px] font-semibold mb-1">
                 Unlock {unlockTarget.title || "private content"}
               </h3>
+              {unlockTarget._bundleCount > 1 && (
+                <p className="text-[12px] text-gray-400 mb-1">
+                  Bundle · {unlockTarget._bundleCount} photos/videos
+                </p>
+              )}
               <p className="text-pink-400 font-bold text-[18px] mb-3">
                 ₦{Number(unlockTarget.price).toLocaleString()}
               </p>
