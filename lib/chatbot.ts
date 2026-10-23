@@ -14,8 +14,29 @@ function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+/**
+ * Reply delay by time of day:
+ * Morning slower · afternoon medium · evening quicker · night free-flowing.
+ * Seconds (not 30–45 min) so the app does not look broken.
+ */
 export function delayFeel(): number {
-  return 1800 + Math.floor(Math.random() * 2500);
+  const hour = new Date().getHours();
+  let minSec: number;
+  let maxSec: number;
+  if (hour >= 6 && hour < 12) {
+    minSec = 12;
+    maxSec = 28;
+  } else if (hour >= 12 && hour < 17) {
+    minSec = 8;
+    maxSec = 18;
+  } else if (hour >= 17 && hour < 22) {
+    minSec = 5;
+    maxSec = 12;
+  } else {
+    minSec = 2;
+    maxSec = 6;
+  }
+  return (minSec + Math.random() * (maxSec - minSec)) * 1000;
 }
 
 function lower(s: string) {
