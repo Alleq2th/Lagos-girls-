@@ -64,8 +64,10 @@ export default function Home() {
   const [unlockedIds, setUnlockedIds] = useState<string[]>([]);
   const [readMap, setReadMap] = useState<Record<string, string>>({});
   const [followingIds, setFollowingIds] = useState<string[]>([]);
+  const [chatServices, setChatServices] = useState<{ name: string; price: number; desc?: string }[]>([]);
+  const [showChatBook, setShowChatBook] = useState(false);
   const [paymentInstructions, setPaymentInstructions] = useState(
-    "Pay to:\nOPay / Moniepoint — ask the girl in chat after you book.\nAfter payment, message: I have paid for [service]."
+    "Pay to:\nOPay: (set in Admin)\nMoniepoint: (set in Admin)\n\nAfter payment, tap I've paid on the pay screen."
   );
   const [seenStoryUsers, setSeenStoryUsers] = useState<string[]>([]);
   const [premiumWall, setPremiumWall] = useState(false);
@@ -158,12 +160,70 @@ export default function Home() {
     let h = 0;
     for (let i = 0; i < user.id.length; i++) h = (h + user.id.charCodeAt(i) * (i + 1 + hour)) % 100;
     if (user.role === "GIRL") {
-      if (h < 45) return "Active now";
-      if (h < 75) return "Active today";
+      if (h < 55) return "Active now";
+      if (h < 80) return "Active today";
       return "Active recently";
     }
     if (h < 25) return "Active now";
     return "Active recently";
+  }
+
+  function parseServices(raw: any): { name: string; price: number; desc?: string }[] {
+    try {
+      const list = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (!Array.isArray(list)) return [];
+      return list
+        .map((s: any) => ({
+          name: String(s.name || "").trim(),
+          price: Number(s.price) || 0,
+          desc: s.desc ? String(s.desc) : undefined,
+        }))
+        .filter((s) => s.name);
+    } catch {
+      return [];
+    }
+  }
+
+  function isMoneyIntent(text: string) {
+    const t = (text || "").toLowerCase();
+    return [
+      "pay", "book", "price", "how much", "meet", "video call", "voice call",
+      "custom", "private", "transfer", "opay", "monie", "service", "services",
+      "join", "session", "naira", "₦", "horny", "come over", "see you",
+    ].some((k) => t.includes(k));
+  }
+
+  function defaultChatServices(): { name: string; price: number }[] {
+    return [
+      { name: "Video Call", price: 20000 },
+      { name: "Private Chat", price: 5000 },
+      { name: "Custom Video", price: 15000 },
+    ];
+  }
+
+  function loadChatMemory(convId: string): string[] {
+    try {
+      return JSON.parse(localStorage.getItem("lagos_mem_" + convId) || "[]");
+    } catch {
+      return [];
+    }
+  }
+
+  function saveChatMemory(convId: string, userText: string) {
+    if (!convId || !userText) return;
+    const t = userText.toLowerCase();
+    const facts: string[] = [];
+    if (t.includes("video") || t.includes("dance")) facts.push("liked her videos / dancing");
+    if (t.includes("meet")) facts.push("asked about meeting");
+    if (t.includes("video call")) facts.push("interested in video call");
+    if (t.includes("private")) facts.push("interested in private chat");
+    if (t.includes("custom")) facts.push("interested in custom content");
+    if (!facts.length) return;
+    try {
+      const prev = loadChatMemory(convId);
+      const next = [...facts, ...prev].filter((v, i, a) => a.indexOf(v) === i).slice(0, 8);
+      localStorage.setItem("lagos_mem_" + convId, JSON.stringify(next));
+    } catch {}
   }
 
   function getPaymentInstructions() {
@@ -253,6 +313,7 @@ export default function Home() {
         at: new Date().toISOString(),
         user: profile?.username || session?.user?.id,
         media_id: mediaId,
+        conversation_id: currentChat?.id || null,
       });
       localStorage.setItem(UNLOCKS_KEY, JSON.stringify(list.slice(0, 100)));
     } catch {}
@@ -270,9 +331,35 @@ export default function Home() {
       } catch {}
     }
 
+    // Instant girl confirmation in chat (feels paid / value)
+    if (currentChat?.id && session?.user?.id) {
+      const girlId = currentChat.girl_id;
+      if (girlId && girlId !== session.user.id) {
+        const confirmations = [
+          `got it baby 💕 checking your payment for ${label} — i’ll confirm once it shows`,
+          `okayy i see you paid for ${label} — give me a moment to verify then we continue`,
+          `received your payment note for ${label} 💗 admin is verifying, stay here`,
+        ];
+        const content = confirmations[Math.floor(Math.random() * confirmations.length)];
+        try {
+          await supabase.from("messages").insert({
+            conversation_id: currentChat.id,
+            sender_id: girlId,
+            content,
+          });
+          await supabase
+            .from("conversations")
+            .update({ updated_at: new Date().toISOString() })
+            .eq("id", currentChat.id);
+          loadChatMessages(currentChat.id);
+        } catch {}
+      }
+    }
+
     setMessage("Payment marked — wait for confirmation. Admin unlocks after verify.");
     setPaySheet(null);
     setUnlockTarget(null);
+    setShowChatBook(false);
   }
 
   function markStorySeen(userId: string) {
@@ -868,18 +955,12 @@ export default function Home() {
       const girlName = chat.girl?.display_name || chat.girl?.username || undefined;
 
       // Services for this girl only (names/prices) — NEVER dump admin bank accounts in chat
-      let servicesList: { name: string; price: number }[] = [];
-      try {
-        const raw = chat.girl?.services || (chat as any).profiles?.services;
-        if (raw) {
-          const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-          if (Array.isArray(parsed)) {
-            servicesList = parsed
-              .map((s: any) => ({ name: String(s.name || ""), price: Number(s.price) || 0 }))
-              .filter((s: any) => s.name);
-          }
-        }
-      } catch {}
+      let servicesList = parseServices(chat.girl?.services);
+      if (!servicesList.length) servicesList = defaultChatServices();
+      setChatServices(servicesList);
+      if (isMoneyIntent(body)) setShowChatBook(true);
+      saveChatMemory(convId, body);
+      const memory = loadChatMemory(convId);
 
       setTimeout(async () => {
         let reply = "";
@@ -893,6 +974,7 @@ export default function Home() {
               girlName,
               traits,
               services: servicesList,
+              memory,
             }),
           });
           const data = await res.json().catch(() => ({}));
@@ -1994,17 +2076,25 @@ export default function Home() {
                         setCurrentChat(conv);
                         loadChatMessages(conv.id);
                         markChatRead(conv.id);
+                        const svc = parseServices(conv.girl?.services || other?.services);
+                        setChatServices(svc.length ? svc : defaultChatServices());
+                        setShowChatBook(false);
                         setView("chat");
                       }}
                       className="flex items-center gap-3 px-4 py-3 active:bg-zinc-900 cursor-pointer"
                     >
-                      <div className="w-14 h-14 rounded-full bg-zinc-800 overflow-hidden shrink-0">
-                        {other?.avatar_url ? (
-                          <img src={other.avatar_url} className="w-full h-full object-cover" alt="" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center font-bold">
-                            {other?.username?.[0]?.toUpperCase()}
-                          </div>
+                      <div className="relative w-14 h-14 shrink-0">
+                        <div className="w-14 h-14 rounded-full bg-zinc-800 overflow-hidden">
+                          {other?.avatar_url ? (
+                            <img src={other.avatar_url} className="w-full h-full object-cover" alt="" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center font-bold">
+                              {other?.username?.[0]?.toUpperCase()}
+                            </div>
+                          )}
+                        </div>
+                        {presenceLabel(other || {}) === "Active now" && (
+                          <span className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-black" />
                         )}
                       </div>
                       <div className="min-w-0 flex-1 border-b border-zinc-900 pb-3">
@@ -2016,8 +2106,8 @@ export default function Home() {
                             <span className="w-2.5 h-2.5 rounded-full bg-pink-500 shrink-0" />
                           )}
                         </div>
-                        <p className="text-[13px] text-gray-500 truncate">
-                          {isUnread(conv) ? "New activity" : "Tap to open chat"}
+                        <p className="text-[12px] text-gray-500 truncate">
+                          {presenceLabel(other || {}) || (isUnread(conv) ? "New activity" : "Tap to open")}
                         </p>
                       </div>
                     </div>
@@ -2033,7 +2123,16 @@ export default function Home() {
           <div className="fixed inset-0 z-40 bg-black flex flex-col">
             <div className="px-4 py-3 border-b border-zinc-800 flex items-center gap-3 shrink-0">
               <button onClick={() => setView("messages")} className="text-pink-500 text-[15px]">←</button>
-              <span className="font-medium text-[15px] flex-1">Chat</span>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-[15px] truncate">
+                  {currentChat.girl?.display_name ||
+                    currentChat.girl?.username ||
+                    "Chat"}
+                </p>
+                <p className="text-[11px] text-green-400 truncate">
+                  {presenceLabel(currentChat.girl || { id: currentChat.girl_id, role: "GIRL" })}
+                </p>
+              </div>
               <button
                 onClick={() => setCallModal("voice")}
                 className="text-white p-1"
@@ -2072,6 +2171,56 @@ export default function Home() {
               ))}
               <div ref={chatEndRef} />
             </div>
+
+            {/* In-chat Book strip — money path */}
+            {(showChatBook || chatServices.length > 0) && (
+              <div className="px-3 py-2 border-t border-zinc-800 bg-zinc-950 shrink-0">
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-[11px] text-gray-400 font-medium">Book a service</p>
+                  <button
+                    type="button"
+                    onClick={() => setShowChatBook((v) => !v)}
+                    className="text-[11px] text-pink-400"
+                  >
+                    {showChatBook ? "Hide" : "Show"}
+                  </button>
+                </div>
+                {showChatBook && (
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {(chatServices.length ? chatServices : defaultChatServices()).slice(0, 5).map((s, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => {
+                          if (!requirePremium("Become Premium to book")) return;
+                          openPaySheet(
+                            s.name,
+                            s.price,
+                            "Pay with the details below, then tap I've paid"
+                          );
+                        }}
+                        className="shrink-0 bg-zinc-900 border border-pink-500/40 rounded-xl px-3 py-2 text-left min-w-[120px] active:bg-zinc-800"
+                      >
+                        <p className="text-[12px] font-semibold text-white truncate">{s.name}</p>
+                        <p className="text-[12px] text-pink-400 font-bold">
+                          ₦{Number(s.price).toLocaleString()}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {!showChatBook && (
+                  <button
+                    type="button"
+                    onClick={() => setShowChatBook(true)}
+                    className="w-full text-[12px] text-pink-400 py-1"
+                  >
+                    Show prices · Video · Private · Custom
+                  </button>
+                )}
+              </div>
+            )}
+
             <div className="px-3 py-3 border-t border-zinc-800 flex gap-2 shrink-0 bg-black pb-[max(0.75rem,env(safe-area-inset-bottom))]">
               <input
                 type="text"
