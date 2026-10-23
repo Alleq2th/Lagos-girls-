@@ -20,7 +20,7 @@ const DEFAULT_SERVICES = [
   { name: "Video Call Extended", price: 20000, desc: "30 minutes" },
 ];
 
-type Tab = "accounts" | "settings" | "chats" | "unlocks" | "stats";
+type Tab = "accounts" | "settings" | "chats" | "unlocks" | "hotleads" | "stats";
 
 export default function AdminPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -72,6 +72,7 @@ export default function AdminPage() {
 
   // Unlocks (local queue until DB table exists)
   const [pendingUnlocks, setPendingUnlocks] = useState<any[]>([]);
+  const [hotLeads, setHotLeads] = useState<any[]>([]);
 
   // Stats
   const [stats, setStats] = useState({
@@ -91,6 +92,8 @@ export default function AdminPage() {
       loadAccounts();
       loadStats();
       loadConversations();
+      loadHotLeads();
+      loadUnlockRequests();
       (async () => {
         try {
           const { data } = await supabase
@@ -462,6 +465,40 @@ export default function AdminPage() {
       }
     } catch (e: any) {
       setSettingsMsg("Saved locally only. " + (e?.message || ""));
+    }
+  }
+
+  async function loadHotLeads() {
+    try {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data } = await supabase
+        .from("messages")
+        .select("id, content, created_at, sender_id, conversation_id")
+        .gte("created_at", since)
+        .order("created_at", { ascending: false })
+        .limit(250);
+      const keys = [
+        "pay",
+        "book",
+        "meet",
+        "video call",
+        "how much",
+        "transfer",
+        "opay",
+        "private",
+        "custom",
+        "i have paid",
+        "i've paid",
+        "naira",
+        "₦",
+      ];
+      const hits = (data || []).filter((m: any) => {
+        const c = (m.content || "").toLowerCase();
+        return keys.some((k) => c.includes(k));
+      });
+      setHotLeads(hits.slice(0, 40));
+    } catch {
+      setHotLeads([]);
     }
   }
 
@@ -837,6 +874,7 @@ export default function AdminPage() {
               ["accounts", "Accounts"],
               ["stats", "Stats"],
               ["chats", "Chats"],
+              ["hotleads", "Hot leads"],
               ["unlocks", "Unlocks"],
               ["settings", "Settings"],
             ] as const
@@ -999,6 +1037,55 @@ export default function AdminPage() {
                     Send
                   </button>
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* HOT LEADS — money intent last 24h */}
+        {tab === "hotleads" && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-xs text-gray-500">
+                Messages in last 24h that mention pay / book / meet / video — chase these first.
+              </p>
+              <button onClick={loadHotLeads} className="text-xs text-pink-500 shrink-0 ml-2">
+                Refresh
+              </button>
+            </div>
+            {hotLeads.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-8">No hot leads yet</p>
+            ) : (
+              <div className="space-y-2">
+                {hotLeads.map((m) => (
+                  <div
+                    key={m.id}
+                    className="bg-zinc-900 border border-pink-500/20 rounded-xl p-3"
+                  >
+                    <p className="text-sm text-gray-100 whitespace-pre-wrap">{m.content}</p>
+                    <p className="text-[10px] text-gray-500 mt-1">
+                      {m.created_at ? new Date(m.created_at).toLocaleString() : ""} · conv{" "}
+                      {String(m.conversation_id || "").slice(0, 8)}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const conv = conversations.find((c) => c.id === m.conversation_id);
+                        if (conv) {
+                          setSelectedConv(conv);
+                          openConversation(conv);
+                          setTab("chats");
+                        } else {
+                          setMessage("Open Chats tab and find this conversation");
+                          setTab("chats");
+                        }
+                      }}
+                      className="mt-2 text-xs text-pink-400"
+                    >
+                      Open in Chats →
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
