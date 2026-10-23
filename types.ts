@@ -20,11 +20,17 @@ export type Post = {
   profiles?: Profile;
 };
 
+export type PrivateMediaItem = {
+  url: string;
+  type: "image" | "video";
+};
+
 export type PrivateMedia = {
   id: string;
   user_id: string;
   title: string | null;
+  /** Single URL, or JSON string of PrivateMediaItem[] for bundles */
   media_url: string;
-  media_type: "image" | "video";
+  media_type: "image" | "video" | "bundle";
   price: number;
 };
