@@ -408,6 +408,7 @@ export default function Home() {
   const [previews, setPreviews] = useState<string[]>([]);
   const [isPrivate, setIsPrivate] = useState(false);
   const [isStory, setIsStory] = useState(false);
+  const [isAnonymousVideo, setIsAnonymousVideo] = useState(false);
   const [price, setPrice] = useState(2000);
   const [title, setTitle] = useState("");
 
@@ -422,38 +423,55 @@ export default function Home() {
   const avatarRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const feedLoadedRef = useRef(false);
+  const bootViewSetRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
 
     loadPaymentInstructions();
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
       if (!mounted) return;
-      setSession(session);
-      if (session) {
-        ensureProfile(session.user);
-        loadFollowing(session.user.id);
-        loadMyUnlocks(session.user.id);
-        setView("feed");
-      } else {
+      setSession(s);
+      if (s) {
+        ensureProfile(s.user);
+        loadFollowing(s.user.id);
+        loadMyUnlocks(s.user.id);
+        if (!bootViewSetRef.current) {
+          setView("feed");
+          bootViewSetRef.current = true;
+        }
+      } else if (!bootViewSetRef.current) {
         setView("auth");
+        bootViewSetRef.current = true;
       }
       setAuthLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, s) => {
       if (!mounted) return;
-      setSession(session);
-      if (session) {
-        ensureProfile(session.user);
-        loadFollowing(session.user.id);
-        loadMyUnlocks(session.user.id);
-        if (event === "SIGNED_IN") setView("feed");
-      } else {
+      // Token refresh / initial session must not flash auth or jump tabs
+      if (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") {
+        setSession(s);
+        return;
+      }
+      setSession(s);
+      if (s && event === "SIGNED_IN") {
+        ensureProfile(s.user);
+        loadFollowing(s.user.id);
+        loadMyUnlocks(s.user.id);
+        setView("feed");
+        bootViewSetRef.current = true;
+      } else if (!s || event === "SIGNED_OUT") {
         setProfile(null);
         setFollowingIds([]);
+        setPosts([]);
+        feedLoadedRef.current = false;
         setView("auth");
+        bootViewSetRef.current = true;
       }
       setAuthLoading(false);
     });
@@ -473,27 +491,39 @@ export default function Home() {
     } catch {}
   }, []);
 
+  // Load data per tab — do NOT wipe feed when leaving and returning
   useEffect(() => {
     if (view === "feed") {
-      loadPosts();
-      loadStories();
+      if (!feedLoadedRef.current) {
+        loadPosts().then(() => {
+          feedLoadedRef.current = true;
+        });
+        loadStories();
+      }
     }
     if (view === "saved" && session) loadSavedPosts();
     if (view === "profile" && session) {
+      // Only refresh profile data; keep form if already editing same user
       ensureProfile(session.user);
       loadMyPosts();
     }
     if (view === "messages" && session) loadConversations();
+    if (view === "reels" && !feedLoadedRef.current) {
+      loadPosts().then(() => {
+        feedLoadedRef.current = true;
+      });
+    }
   }, [view]);
 
-  // Always scroll chat to latest message
+  // Scroll chat only when new messages arrive (not on every parent re-render)
   useEffect(() => {
     if (view === "chat") {
-      setTimeout(() => {
+      const t = setTimeout(() => {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, 50);
+      }, 40);
+      return () => clearTimeout(t);
     }
-  }, [chatMessages, view]);
+  }, [chatMessages.length, view]);
 
   async function ensureProfile(user: any) {
     if (!user?.id) return null;
@@ -506,12 +536,20 @@ export default function Home() {
 
       if (data) {
         setProfile(data);
-        setDisplayName(data.display_name || "");
-        setBio(data.bio || "");
-        setLocation(data.location || "");
+        // Avoid form jump on tab return — only seed form when empty or different user
+        setDisplayName((prev) =>
+          prev && profile?.id === data.id ? prev : data.display_name || ""
+        );
+        setBio((prev) => (prev && profile?.id === data.id ? prev : data.bio || ""));
+        setLocation((prev) =>
+          prev && profile?.id === data.id ? prev : data.location || ""
+        );
         try {
           const raw = (data as any).services;
-          setMyServices(raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : []);
+          const parsed = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : [];
+          setMyServices((prev) =>
+            prev.length && profile?.id === data.id ? prev : parsed
+          );
         } catch {
           setMyServices([]);
         }
@@ -614,28 +652,41 @@ export default function Home() {
         .limit(40);
 
       if (data && data.length > 0) {
-        // Parallelize stats fetching for better speed
-        const postsWithStats = await Promise.all(
-          data.map(async (post: any) => {
-            const [likesRes, myLikeRes, mySaveRes] = await Promise.all([
-              supabase.from("likes").select("*", { count: "exact", head: true }).eq("post_id", post.id),
-              session?.user?.id
-                ? supabase.from("likes").select("id").eq("post_id", post.id).eq("user_id", session.user.id).maybeSingle()
-                : Promise.resolve({ data: null }),
-              session?.user?.id
-                ? supabase.from("saves").select("id").eq("post_id", post.id).eq("user_id", session.user.id).maybeSingle()
-                : Promise.resolve({ data: null }),
-            ]);
-            return {
-              ...post,
-              likes_count: likesRes.count || 0,
-              liked_by_me: !!myLikeRes.data,
-              saved_by_me: !!mySaveRes.data,
-            };
-          })
-        );
+        const ids = data.map((p: any) => p.id);
+        // Batch likes/saves instead of 3 requests per post (major lag fix)
+        const [likesRes, myLikesRes, mySavesRes] = await Promise.all([
+          supabase.from("likes").select("post_id").in("post_id", ids),
+          session?.user?.id
+            ? supabase
+                .from("likes")
+                .select("post_id")
+                .in("post_id", ids)
+                .eq("user_id", session.user.id)
+            : Promise.resolve({ data: [] as any[] }),
+          session?.user?.id
+            ? supabase
+                .from("saves")
+                .select("post_id")
+                .in("post_id", ids)
+                .eq("user_id", session.user.id)
+            : Promise.resolve({ data: [] as any[] }),
+        ]);
+
+        const countMap: Record<string, number> = {};
+        (likesRes.data || []).forEach((r: any) => {
+          countMap[r.post_id] = (countMap[r.post_id] || 0) + 1;
+        });
+        const myLikeSet = new Set((myLikesRes.data || []).map((r: any) => r.post_id));
+        const mySaveSet = new Set((mySavesRes.data || []).map((r: any) => r.post_id));
+
+        const postsWithStats = data.map((post: any) => ({
+          ...post,
+          likes_count: countMap[post.id] || 0,
+          liked_by_me: myLikeSet.has(post.id),
+          saved_by_me: mySaveSet.has(post.id),
+        }));
         setPosts(smartFeedSort(postsWithStats));
-      } else {
+      } else if (!feedLoadedRef.current) {
         setPosts([]);
       }
     } finally {
@@ -1267,15 +1318,27 @@ export default function Home() {
               media_type: mediaType,
             });
           } else {
+            let cap =
+              files.length === 1 ? caption || null : caption || null;
+            // Anonymous free video — no public username on feed/reels
+            if (isAnonymousVideo && mediaType === "video") {
+              cap = `__anon__\n${caption || ""}`.trim();
+            }
             await supabase.from("posts").insert({
               user_id: session.user.id,
-              caption: files.length === 1 ? caption : caption || null,
+              caption: cap,
               media_url: mediaUrl,
               media_type: mediaType,
             });
           }
         }
-        setMessage(isStory ? "Added to Story!" : "Posted!");
+        setMessage(
+          isStory
+            ? "Added to Story!"
+            : isAnonymousVideo
+            ? "Anonymous free video posted!"
+            : "Posted!"
+        );
       }
 
       setFiles([]);
@@ -1284,10 +1347,14 @@ export default function Home() {
       setTitle("");
       setIsPrivate(false);
       setIsStory(false);
+      setIsAnonymousVideo(false);
+      feedLoadedRef.current = false;
       if (fileRef.current) fileRef.current.value = "";
       setTimeout(() => {
         setView("feed");
-        loadPosts();
+        loadPosts().then(() => {
+          feedLoadedRef.current = true;
+        });
         loadStories();
       }, 700);
     } catch (err: any) {
@@ -1471,8 +1538,8 @@ export default function Home() {
     );
   }
 
-  // ========== AUTH SCREEN ==========
-  if (view === "auth" || !session) {
+  // ========== AUTH SCREEN (only when truly logged out) ==========
+  if (!session || view === "auth") {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center p-6">
         <div className="max-w-md w-full">
@@ -1741,10 +1808,26 @@ export default function Home() {
                 <p className="text-gray-600 text-sm">Be the first to share something</p>
               </div>
             ) : (
-              posts.map((post) => (
+              posts.map((post) => {
+                const isAnon = String(post.caption || "").startsWith("__anon__");
+                const displayCaption = isAnon
+                  ? String(post.caption || "").replace(/^__anon__\n?/, "")
+                  : post.caption;
+                return (
                 <article key={post.id} className="border-b border-zinc-900/80 pb-4">
                   {/* Header */}
                   <div className="flex items-center justify-between px-3.5 py-2.5">
+                    {isAnon ? (
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-[38px] h-[38px] rounded-full bg-zinc-800 flex items-center justify-center text-sm ring-1 ring-zinc-700">
+                          ▶
+                        </div>
+                        <div>
+                          <p className="font-semibold text-[13.5px] leading-tight">Free video</p>
+                          <p className="text-[11px] text-gray-500 leading-tight">Watch only</p>
+                        </div>
+                      </div>
+                    ) : (
                     <div
                       className="flex items-center gap-2.5 cursor-pointer active:opacity-70"
                       onClick={() => openUserProfile(post.user_id)}
@@ -1763,12 +1846,15 @@ export default function Home() {
                         <p className="text-[11px] text-gray-500 leading-tight">@{post.profiles?.username}</p>
                       </div>
                     </div>
+                    )}
+                    {!isAnon && (
                     <button
                       onClick={() => openUserProfile(post.user_id)}
                       className="text-[12px] text-pink-500 font-semibold px-2 py-1"
                     >
                       View
                     </button>
+                    )}
                   </div>
 
                   {/* Media — double-tap to like */}
@@ -1845,16 +1931,19 @@ export default function Home() {
                   )}
 
                   {/* Caption */}
-                  {post.caption && (
+                  {displayCaption && (
                     <p className="px-3.5 mt-1 text-[13.5px] leading-snug">
-                      <span className="font-semibold mr-1.5">{post.profiles?.username}</span>
-                      <span className="text-gray-100">{post.caption}</span>
+                      {!isAnon && (
+                        <span className="font-semibold mr-1.5">{post.profiles?.username}</span>
+                      )}
+                      <span className="text-gray-100">{displayCaption}</span>
                     </p>
                   )}
 
-                  {/* Book shortcut — money path from feed */}
-                  {post.profiles?.role === "GIRL" && post.user_id !== session?.user?.id && (
-                    <div className="px-3.5 mt-2 flex gap-2">
+                  {/* Book + profile — all posts except your own (old + new accounts) */}
+                  {post.user_id !== session?.user?.id &&
+                    !String(post.caption || "").startsWith("__anon__") && (
+                    <div className="px-3.5 mt-2 flex gap-2 flex-wrap">
                       <button
                         onClick={() => {
                           if (!requirePremium("Become Premium to book services")) return;
@@ -1870,7 +1959,13 @@ export default function Home() {
                       </button>
                       <button
                         onClick={() => openUserProfile(post.user_id)}
-                        className="text-[12px] font-medium text-gray-400 px-2 py-1.5"
+                        className="text-[12px] font-medium text-gray-300 px-2 py-1.5"
+                      >
+                        View profile
+                      </button>
+                      <button
+                        onClick={() => openUserProfile(post.user_id)}
+                        className="text-[12px] font-medium text-gray-500 px-2 py-1.5"
                       >
                         Services
                       </button>
@@ -1915,7 +2010,8 @@ export default function Home() {
                     </div>
                   )}
                 </article>
-              ))
+              );
+              })
             )}
           </div>
         )}
@@ -1993,13 +2089,30 @@ export default function Home() {
             )}
 
             {!isPrivate && !isStory && (
-              <textarea
-                placeholder="Write a caption..."
-                value={caption}
-                onChange={(e) => setCaption(e.target.value)}
-                rows={3}
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 resize-none text-[14px] placeholder:text-gray-500"
-              />
+              <>
+                <textarea
+                  placeholder="Write a caption..."
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                  rows={3}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 resize-none text-[14px] placeholder:text-gray-500"
+                />
+                <label className="flex items-start gap-3 text-[13px] text-gray-300 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={isAnonymousVideo}
+                    onChange={(e) => setIsAnonymousVideo(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="font-medium text-white">Anonymous free video</span>
+                    <span className="block text-gray-500 text-[12px] mt-0.5">
+                      No username / profile on feed or reels — just the video for people to watch.
+                      Use a video file.
+                    </span>
+                  </span>
+                </label>
+              </>
             )}
 
             {previews.length > 0 && (
@@ -2858,7 +2971,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* ========== REELS — 9:16 videos, pause + save ========== */}
+        {/* ========== REELS — profile, view profile, like, save, book ========== */}
         {view === "reels" && (
           <div className="fixed inset-0 z-30 bg-black overflow-y-scroll snap-y snap-mandatory">
             {posts.filter((p) => p.media_type === "video").length === 0 ? (
@@ -2870,12 +2983,15 @@ export default function Home() {
                 .filter((p) => p.media_type === "video")
                 .map((post) => {
                   const paused = !!reelPaused[post.id];
+                  const isAnon = String(post.caption || "").startsWith("__anon__");
+                  const captionText = isAnon
+                    ? String(post.caption || "").replace(/^__anon__\n?/, "")
+                    : post.caption;
                   return (
                     <div
                       key={post.id}
                       className="h-[100dvh] w-full snap-start relative flex items-center justify-center bg-black"
                     >
-                      {/* 9:16 frame */}
                       <div className="relative h-full w-full max-w-[min(100%,calc(100dvh*9/16))] mx-auto bg-black">
                         <video
                           src={post.media_url}
@@ -2908,25 +3024,110 @@ export default function Home() {
                             </span>
                           </button>
                         )}
-                        <div className="absolute bottom-24 left-0 right-16 px-4 z-10 pointer-events-none">
-                          <button
-                            onClick={() => openUserProfile(post.user_id)}
-                            className="font-semibold text-[14px] mb-1 pointer-events-auto"
-                          >
-                            @{post.profiles?.username}
-                          </button>
-                          {post.caption && (
-                            <p className="text-[13px] text-gray-200 line-clamp-2">{post.caption}</p>
+
+                        {/* Bottom-left: avatar + name + caption + view profile + book */}
+                        <div className="absolute bottom-24 left-0 right-16 px-3 z-10">
+                          {!isAnon && (
+                            <div className="flex items-center gap-2 mb-2">
+                              <button
+                                type="button"
+                                onClick={() => openUserProfile(post.user_id)}
+                                className="w-10 h-10 rounded-full overflow-hidden bg-zinc-800 ring-2 ring-white/80 shrink-0"
+                              >
+                                {post.profiles?.avatar_url ? (
+                                  <img
+                                    src={post.profiles.avatar_url}
+                                    className="w-full h-full object-cover"
+                                    alt=""
+                                  />
+                                ) : (
+                                  <span className="w-full h-full flex items-center justify-center text-sm font-bold">
+                                    {(post.profiles?.username || "?")[0]?.toUpperCase()}
+                                  </span>
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openUserProfile(post.user_id)}
+                                className="font-semibold text-[14px] text-white drop-shadow"
+                              >
+                                @{post.profiles?.username || "user"}
+                              </button>
+                            </div>
+                          )}
+                          {isAnon && (
+                            <p className="text-[12px] text-gray-300 mb-1 font-medium">Free video</p>
+                          )}
+                          {captionText && (
+                            <p className="text-[13px] text-white/95 line-clamp-3 mb-2 drop-shadow">
+                              {captionText}
+                            </p>
+                          )}
+                          {!isAnon && post.user_id !== session?.user?.id && (
+                            <div className="flex gap-2 flex-wrap pointer-events-auto">
+                              <button
+                                type="button"
+                                onClick={() => openUserProfile(post.user_id)}
+                                className="text-[12px] font-semibold bg-white/15 border border-white/30 px-3 py-1.5 rounded-full text-white"
+                              >
+                                View profile
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!requirePremium("Become Premium to book services")) return;
+                                  requestService(post.user_id, {
+                                    name: "Video Call",
+                                    price: 15000,
+                                    desc: "From reels",
+                                  });
+                                }}
+                                className="text-[12px] font-semibold bg-pink-600 px-3 py-1.5 rounded-full text-white"
+                              >
+                                Book
+                              </button>
+                            </div>
                           )}
                         </div>
+
+                        {/* Right rail: like, comment, save */}
                         <div className="absolute bottom-28 right-3 flex flex-col items-center gap-5 z-10">
-                          <button onClick={() => toggleLike(post.id)} className="flex flex-col items-center gap-0.5">
+                          {!isAnon && (
+                            <button
+                              type="button"
+                              onClick={() => openUserProfile(post.user_id)}
+                              className="w-12 h-12 rounded-full overflow-hidden bg-zinc-800 ring-2 ring-white mb-1"
+                            >
+                              {post.profiles?.avatar_url ? (
+                                <img
+                                  src={post.profiles.avatar_url}
+                                  className="w-full h-full object-cover"
+                                  alt=""
+                                />
+                              ) : (
+                                <span className="w-full h-full flex items-center justify-center font-bold">
+                                  {(post.profiles?.username || "?")[0]?.toUpperCase()}
+                                </span>
+                              )}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => toggleLike(post.id)}
+                            className="flex flex-col items-center gap-0.5"
+                          >
                             {post.liked_by_me ? (
                               <svg width="28" height="28" viewBox="0 0 24 24" fill="#ed4956">
                                 <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
                               </svg>
                             ) : (
-                              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                              <svg
+                                width="28"
+                                height="28"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="white"
+                                strokeWidth="2"
+                              >
                                 <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
                               </svg>
                             )}
@@ -2936,23 +3137,61 @@ export default function Home() {
                             onClick={() => openComments(post.id)}
                             className="flex flex-col items-center gap-0.5"
                           >
-                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                            <svg
+                              width="28"
+                              height="28"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="white"
+                              strokeWidth="2"
+                            >
                               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                             </svg>
-                            <span className="text-[11px] text-white">{post.comments_count || 0}</span>
+                            <span className="text-[11px] text-white">
+                              {post.comments_count || 0}
+                            </span>
                           </button>
-                          <button onClick={() => toggleSave(post.id)} className="flex flex-col items-center gap-0.5">
+                          <button
+                            onClick={() => toggleSave(post.id)}
+                            className="flex flex-col items-center gap-0.5"
+                          >
                             {post.saved_by_me ? (
                               <svg width="26" height="26" viewBox="0 0 24 24" fill="white">
                                 <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
                               </svg>
                             ) : (
-                              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                              <svg
+                                width="26"
+                                height="26"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="white"
+                                strokeWidth="2"
+                              >
                                 <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
                               </svg>
                             )}
                             <span className="text-[11px] text-white">Save</span>
                           </button>
+                          {!isAnon && post.user_id !== session?.user?.id && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!requirePremium("Become Premium to book services")) return;
+                                requestService(post.user_id, {
+                                  name: "Video Call",
+                                  price: 15000,
+                                  desc: "From reels",
+                                });
+                              }}
+                              className="flex flex-col items-center gap-0.5"
+                            >
+                              <span className="w-9 h-9 rounded-full bg-pink-600 flex items-center justify-center text-[11px] font-bold">
+                                ₦
+                              </span>
+                              <span className="text-[11px] text-white">Book</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
