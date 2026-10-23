@@ -52,7 +52,7 @@ export default function AdminPage() {
   const [caption, setCaption] = useState("");
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState(2000);
-  const [postType, setPostType] = useState<"public" | "private" | "story">("public");
+  const [postType, setPostType] = useState<"public" | "private" | "story" | "free_anon">("public");
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
 
@@ -318,33 +318,67 @@ export default function AdminPage() {
     setLoading(true);
     setMessage("");
     try {
-      for (const file of files) {
-        const url = await uploadFile(file);
-        const media_type = file.type.startsWith("video") ? "video" : "image";
-        if (postType === "story") {
-          await supabase.from("stories").insert({
-            user_id: selectedAccount.id,
-            media_url: url,
-            media_type,
-          });
-        } else if (postType === "private") {
-          await supabase.from("private_media").insert({
-            user_id: selectedAccount.id,
-            media_url: url,
-            media_type,
-            title: title || "Private",
-            price,
-          });
-        } else {
-          await supabase.from("posts").insert({
-            user_id: selectedAccount.id,
-            media_url: url,
-            media_type,
-            caption: caption || "",
+      // Public multi-file → one carousel post
+      if (postType === "public" && files.length > 1) {
+        const items: { url: string; type: "image" | "video" }[] = [];
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          setMessage(`Uploading carousel… ${i + 1}/${files.length}`);
+          const url = await uploadFile(file);
+          items.push({
+            url,
+            type: file.type.startsWith("video") ? "video" : "image",
           });
         }
+        await supabase.from("posts").insert({
+          user_id: selectedAccount.id,
+          media_url: JSON.stringify(items),
+          media_type: items[0].type,
+          caption: caption || "",
+        });
+        setMessage(`Carousel posted · ${items.length} items`);
+      } else {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          if (files.length > 3) setMessage(`Uploading… ${i + 1}/${files.length}`);
+          const url = await uploadFile(file);
+          const media_type = file.type.startsWith("video") ? "video" : "image";
+          if (postType === "story") {
+            await supabase.from("stories").insert({
+              user_id: selectedAccount.id,
+              media_url: url,
+              media_type,
+            });
+          } else if (postType === "private") {
+            await supabase.from("private_media").insert({
+              user_id: selectedAccount.id,
+              media_url: url,
+              media_type,
+              title: title || "Private",
+              price,
+            });
+          } else if (postType === "free_anon") {
+            await supabase.from("posts").insert({
+              user_id: selectedAccount.id,
+              media_url: url,
+              media_type,
+              caption: `__anon__\n${caption || ""}`.trim(),
+            });
+          } else {
+            await supabase.from("posts").insert({
+              user_id: selectedAccount.id,
+              media_url: url,
+              media_type,
+              caption: caption || "",
+            });
+          }
+        }
+        setMessage(
+          postType === "free_anon"
+            ? `${files.length} free anonymous video(s) uploaded`
+            : "Posted"
+        );
       }
-      setMessage("Posted");
       setCaption("");
       setTitle("");
       setFiles([]);
@@ -689,22 +723,40 @@ export default function AdminPage() {
           {/* Post as account */}
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-8">
             <h3 className="font-bold mb-4">Post as this account</h3>
-            <div className="flex gap-2 mb-4">
-              {(["public", "private", "story"] as const).map((t) => (
+            <div className="flex flex-wrap gap-2 mb-4">
+              {(
+                [
+                  ["public", "Public"],
+                  ["private", "Private ₦"],
+                  ["story", "Story"],
+                  ["free_anon", "Free videos"],
+                ] as const
+              ).map(([t, label]) => (
                 <button
                   key={t}
                   onClick={() => setPostType(t)}
-                  className={`flex-1 py-2 rounded-lg text-sm capitalize ${
+                  className={`px-3 py-2 rounded-lg text-sm ${
                     postType === t ? "bg-pink-600" : "bg-zinc-800"
                   }`}
                 >
-                  {t === "private" ? "Private ₦" : t}
+                  {label}
                 </button>
               ))}
             </div>
-            {postType === "public" && (
+            {postType === "free_anon" && (
+              <p className="text-xs text-gray-400 mb-3">
+                Multi-select many videos (30–40). Each becomes a{" "}
+                <span className="text-pink-400">Free video</span> with no username on
+                feed/reels. Pick any account — name is hidden.
+              </p>
+            )}
+            {(postType === "public" || postType === "free_anon") && (
               <textarea
-                placeholder="Caption..."
+                placeholder={
+                  postType === "free_anon"
+                    ? "Optional caption (still no username shown)..."
+                    : "Caption..."
+                }
                 value={caption}
                 onChange={(e) => setCaption(e.target.value)}
                 rows={2}
