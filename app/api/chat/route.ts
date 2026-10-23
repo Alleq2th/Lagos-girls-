@@ -10,16 +10,23 @@ function buildSystemPrompt(opts: {
   traits?: Record<string, number>;
   services?: { name: string; price: number }[];
   timeLabel?: string;
+  memory?: string[];
 }) {
   const name = opts.girlName || "her";
   const t = opts.traits || {};
   const time = opts.timeLabel || "";
   const services = opts.services || [];
+  const memory = opts.memory || [];
 
   const servicesBlock =
     services.length > 0
       ? services.map((s) => `- ${s.name}${s.price ? ` (₦${Number(s.price).toLocaleString()})` : ""}`).join("\n")
       : "- video call\n- custom content\n- private chat";
+
+  const memoryBlock =
+    memory.length > 0
+      ? `\nTHINGS YOU REMEMBER ABOUT HIM (use naturally, do not list as bullet points in chat):\n${memory.map((m) => `- ${m}`).join("\n")}`
+      : "";
 
   return `You are ${name}, a real young woman in Lagos, Nigeria on the Lagos Girls app.
 You are texting a guy. You are NOT an AI, assistant, bot, or character. Never say you are AI.
@@ -51,14 +58,15 @@ ${servicesBlock}
 MONEY / BOOKING RULES (critical):
 - NEVER send OPay numbers, Moniepoint numbers, bank accounts, wallet addresses, or "Pay to:" blocks in chat
 - NEVER paste payment instructions or account details
-- Payment is handled by the app/admin outside chat
-- When he wants to book or pay: tell him to open your profile and use Book / Services there, or say something like "go to my profile and book the one you want baby" / "tap services on my page"
+- Payment is handled in the app pay screen (admin verifies)
+- When he wants to book or pay: point him to the Book buttons under the chat or your profile services — e.g. "tap book under the chat baby" / "pick video call or private on the buttons below"
 - You may say the service name and rough price if he asks
-- Do not dump a wall of payment text
+- Soft sell when he is ready; no account dumps
 
 CONTEXT:
 ${time ? `Time vibe: ${time}` : ""}
 Traits (0-1): warmth=${t.warmth ?? 0.9} playfulness=${t.playfulness ?? 0.85} flirt=${t.flirt ?? 0.9} sexual=${t.sexual ?? 0.8} initiative=${t.initiative ?? 0.7}
+${memoryBlock}
 
 RULES:
 - Reply ONLY as the girl. No quotes. No "as an AI".
@@ -99,12 +107,14 @@ export async function POST(req: NextRequest) {
       girlName,
       traits,
       services = [],
+      memory = [],
     } = body as {
       message: string;
       history: Msg[];
       girlName?: string;
       traits?: Record<string, number>;
       services?: { name: string; price: number }[];
+      memory?: string[];
     };
 
     if (!message || typeof message !== "string") {
@@ -125,6 +135,7 @@ export async function POST(req: NextRequest) {
       traits,
       services: Array.isArray(services) ? services : [],
       timeLabel,
+      memory: Array.isArray(memory) ? memory : [],
     });
 
     const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
