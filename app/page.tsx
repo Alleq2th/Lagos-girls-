@@ -409,6 +409,7 @@ export default function Home() {
   const [isPrivate, setIsPrivate] = useState(false);
   const [isStory, setIsStory] = useState(false);
   const [isAnonymousVideo, setIsAnonymousVideo] = useState(false);
+  const [carouselPage, setCarouselPage] = useState<Record<string, number>>({});
   const [price, setPrice] = useState(2000);
   const [title, setTitle] = useState("");
 
@@ -1306,37 +1307,41 @@ export default function Home() {
             ? `Bundle of ${items.length} uploaded for ₦${Number(price).toLocaleString()}!`
             : "Private content uploaded!"
         );
-      } else {
+      } else if (isStory) {
         for (const file of files) {
           const mediaType = file.type.startsWith("video") ? "video" : "image";
           const mediaUrl = await uploadFile(file);
-
-          if (isStory) {
-            await supabase.from("stories").insert({
-              user_id: session.user.id,
-              media_url: mediaUrl,
-              media_type: mediaType,
-            });
-          } else {
-            let cap =
-              files.length === 1 ? caption || null : caption || null;
-            // Anonymous free video — no public username on feed/reels
-            if (isAnonymousVideo && mediaType === "video") {
-              cap = `__anon__\n${caption || ""}`.trim();
-            }
-            await supabase.from("posts").insert({
-              user_id: session.user.id,
-              caption: cap,
-              media_url: mediaUrl,
-              media_type: mediaType,
-            });
-          }
+          await supabase.from("stories").insert({
+            user_id: session.user.id,
+            media_url: mediaUrl,
+            media_type: mediaType,
+          });
         }
+        setMessage("Added to Story!");
+      } else {
+        // Public post: 1 file = single · 2+ files = one carousel post
+        const items: { url: string; type: "image" | "video" }[] = [];
+        for (const file of files) {
+          const mediaType = file.type.startsWith("video") ? "video" : "image";
+          const mediaUrl = await uploadFile(file);
+          items.push({ url: mediaUrl, type: mediaType });
+        }
+        let cap = caption || null;
+        if (isAnonymousVideo && items.every((i) => i.type === "video")) {
+          cap = `__anon__\n${caption || ""}`.trim();
+        }
+        const isCarousel = items.length > 1;
+        await supabase.from("posts").insert({
+          user_id: session.user.id,
+          caption: cap,
+          media_url: isCarousel ? JSON.stringify(items) : items[0].url,
+          media_type: items[0].type,
+        });
         setMessage(
-          isStory
-            ? "Added to Story!"
-            : isAnonymousVideo
+          isAnonymousVideo
             ? "Anonymous free video posted!"
+            : isCarousel
+            ? `Carousel posted · ${items.length} items`
             : "Posted!"
         );
       }
@@ -1814,9 +1819,9 @@ export default function Home() {
                   ? String(post.caption || "").replace(/^__anon__\n?/, "")
                   : post.caption;
                 return (
-                <article key={post.id} className="border-b border-zinc-900/80 pb-4">
+                <article key={post.id} className="border-b border-zinc-900 pb-3">
                   {/* Header */}
-                  <div className="flex items-center justify-between px-3.5 py-2.5">
+                  <div className="flex items-center justify-between px-3 py-2">
                     {isAnon ? (
                       <div className="flex items-center gap-2.5">
                         <div className="w-[38px] h-[38px] rounded-full bg-zinc-800 flex items-center justify-center text-sm ring-1 ring-zinc-700">
@@ -1857,28 +1862,90 @@ export default function Home() {
                     )}
                   </div>
 
-                  {/* Media — double-tap to like */}
-                  <div
-                    className="relative bg-zinc-950 flex items-center justify-center overflow-hidden"
-                    onClick={() => handleDoubleTapLike(post.id)}
-                  >
-                    {post.media_type === "video" ? (
-                      <video
-                        src={post.media_url}
-                        controls
-                        playsInline
-                        className="w-full max-h-[70vh] object-contain bg-black"
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    ) : (
-                      <img
-                        src={post.media_url}
-                        className="w-full max-h-[70vh] object-contain bg-black"
-                        alt=""
-                        loading="lazy"
-                      />
-                    )}
-                  </div>
+                  {/* Media — carousel or single · fill width, less empty black */}
+                  {(() => {
+                    const mediaItems = parsePrivateItems(post.media_url, post.media_type);
+                    const page = carouselPage[post.id] || 0;
+                    const cur = mediaItems[page] || mediaItems[0];
+                    const multi = mediaItems.length > 1;
+                    return (
+                      <div
+                        className="relative bg-black overflow-hidden"
+                        onClick={() => handleDoubleTapLike(post.id)}
+                      >
+                        <div className="relative w-full aspect-[4/5] max-h-[72vh]">
+                          {cur?.type === "video" ? (
+                            <video
+                              src={cur.url}
+                              controls
+                              playsInline
+                              className="absolute inset-0 w-full h-full object-cover"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          ) : (
+                            <img
+                              src={cur?.url || post.media_url}
+                              className="absolute inset-0 w-full h-full object-cover"
+                              alt=""
+                              loading="lazy"
+                            />
+                          )}
+                        </div>
+                        {multi && (
+                          <>
+                            <div className="absolute top-3 right-3 bg-black/60 text-white text-[11px] font-medium px-2 py-0.5 rounded-full">
+                              {page + 1}/{mediaItems.length}
+                            </div>
+                            {page > 0 && (
+                              <button
+                                type="button"
+                                className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCarouselPage((p) => ({
+                                    ...p,
+                                    [post.id]: page - 1,
+                                  }));
+                                }}
+                              >
+                                ‹
+                              </button>
+                            )}
+                            {page < mediaItems.length - 1 && (
+                              <button
+                                type="button"
+                                className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCarouselPage((p) => ({
+                                    ...p,
+                                    [post.id]: page + 1,
+                                  }));
+                                }}
+                              >
+                                ›
+                              </button>
+                            )}
+                            <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5">
+                              {mediaItems.map((_, i) => (
+                                <button
+                                  key={i}
+                                  type="button"
+                                  className={`w-1.5 h-1.5 rounded-full ${
+                                    i === page ? "bg-pink-500" : "bg-white/40"
+                                  }`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCarouselPage((p) => ({ ...p, [post.id]: i }));
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Actions — Instagram style icons */}
                   <div className="flex items-center justify-between px-3 pt-3 pb-1">
@@ -2116,24 +2183,34 @@ export default function Home() {
             )}
 
             {previews.length > 0 && (
-              <div className="grid grid-cols-3 gap-2">
-                {previews.map((src, i) => {
-                  const isVideo = files[i]?.type?.startsWith("video/");
-                  return (
-                    <div key={i} className="aspect-square rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800 relative">
-                      {isVideo ? (
-                        <video src={src} className="w-full h-full object-cover" muted playsInline />
-                      ) : (
-                        <img src={src} className="w-full h-full object-cover" alt="" />
-                      )}
-                      {isVideo && (
-                        <span className="absolute bottom-1 right-1 text-[10px] bg-black/70 px-1.5 py-0.5 rounded text-white">
-                          VIDEO
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
+              <div className="space-y-2">
+                {!isPrivate && !isStory && files.length > 1 && (
+                  <p className="text-[12px] text-pink-400 font-medium">
+                    Carousel post · {files.length} items (swipe on feed)
+                  </p>
+                )}
+                <div className="grid grid-cols-3 gap-2">
+                  {previews.map((src, i) => {
+                    const isVideo = files[i]?.type?.startsWith("video/");
+                    return (
+                      <div
+                        key={i}
+                        className="aspect-square rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800 relative"
+                      >
+                        {isVideo ? (
+                          <video src={src} className="w-full h-full object-cover" muted playsInline />
+                        ) : (
+                          <img src={src} className="w-full h-full object-cover" alt="" />
+                        )}
+                        {isVideo && (
+                          <span className="absolute bottom-1 right-1 text-[10px] bg-black/70 px-1.5 py-0.5 rounded text-white">
+                            VIDEO
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
