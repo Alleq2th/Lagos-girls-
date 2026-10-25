@@ -879,19 +879,41 @@ export default function AdminPage() {
           <section className="mb-6">
             <h3 className="font-bold mb-2">Posts ({accountPosts.length})</h3>
             <div className="space-y-2">
-              {accountPosts.map((p) => (
+              {accountPosts.map((p) => {
+                let thumb = p.media_url;
+                let tType = p.media_type;
+                let multi = 0;
+                try {
+                  if (String(p.media_url || "").trim().startsWith("[")) {
+                    const arr = JSON.parse(p.media_url);
+                    if (Array.isArray(arr) && arr[0]?.url) {
+                      thumb = arr[0].url;
+                      tType = arr[0].type || tType;
+                      multi = arr.length;
+                    }
+                  }
+                } catch {}
+                return (
                 <div
                   key={p.id}
                   className="flex items-center gap-3 bg-zinc-900 rounded-xl p-2"
                 >
-                  <div className="w-12 h-12 bg-zinc-800 rounded overflow-hidden">
-                    {p.media_type === "video" ? (
-                      <video src={p.media_url} className="w-full h-full object-cover" />
+                  <div className="w-12 h-12 bg-zinc-800 rounded overflow-hidden relative shrink-0">
+                    {tType === "video" ? (
+                      <video src={thumb} className="w-full h-full object-cover" />
                     ) : (
-                      <img src={p.media_url} className="w-full h-full object-cover" alt="" />
+                      <img src={thumb} className="w-full h-full object-cover" alt="" />
+                    )}
+                    {multi > 1 && (
+                      <span className="absolute bottom-0 right-0 text-[9px] bg-black/80 px-1 text-white">
+                        {multi}
+                      </span>
                     )}
                   </div>
-                  <p className="flex-1 text-xs text-gray-400 truncate">{p.caption || "—"}</p>
+                  <p className="flex-1 text-xs text-gray-400 truncate">
+                    {multi > 1 ? `Carousel · ${multi} · ` : ""}
+                    {p.caption || "—"}
+                  </p>
                   <button
                     onClick={() => deleteContent("posts", p.id)}
                     className="text-red-400 text-xs"
@@ -899,27 +921,50 @@ export default function AdminPage() {
                     Delete
                   </button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </section>
 
           <section className="mb-6">
             <h3 className="font-bold mb-2">Private ({accountPrivate.length})</h3>
             <div className="space-y-2">
-              {accountPrivate.map((p) => (
+              {accountPrivate.map((p) => {
+                let thumb = p.media_url;
+                let tType = p.media_type;
+                let multi = 0;
+                try {
+                  if (String(p.media_url || "").trim().startsWith("[")) {
+                    const arr = JSON.parse(p.media_url);
+                    if (Array.isArray(arr) && arr[0]?.url) {
+                      thumb = arr[0].url;
+                      tType = arr[0].type || tType;
+                      multi = arr.length;
+                    }
+                  }
+                } catch {}
+                return (
                 <div
                   key={p.id}
                   className="flex items-center gap-3 bg-zinc-900 rounded-xl p-2"
                 >
-                  <div className="w-12 h-12 bg-zinc-800 rounded overflow-hidden">
-                    {p.media_type === "video" ? (
-                      <video src={p.media_url} className="w-full h-full object-cover" />
+                  <div className="w-12 h-12 bg-zinc-800 rounded overflow-hidden relative shrink-0">
+                    {tType === "video" ? (
+                      <video src={thumb} className="w-full h-full object-cover" />
                     ) : (
-                      <img src={p.media_url} className="w-full h-full object-cover" alt="" />
+                      <img src={thumb} className="w-full h-full object-cover" alt="" />
+                    )}
+                    {multi > 1 && (
+                      <span className="absolute bottom-0 right-0 text-[9px] bg-black/80 px-1 text-white">
+                        {multi}
+                      </span>
                     )}
                   </div>
                   <div className="flex-1">
-                    <p className="text-xs">{p.title}</p>
+                    <p className="text-xs">
+                      {multi > 1 ? `Bundle · ${multi} · ` : ""}
+                      {p.title}
+                    </p>
                     <p className="text-xs text-pink-400">₦{p.price}</p>
                   </div>
                   <button
@@ -929,7 +974,8 @@ export default function AdminPage() {
                     Delete
                   </button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </section>
 
