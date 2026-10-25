@@ -1646,7 +1646,7 @@ export default function Home() {
 
       {/* Global toast — auto dismiss */}
       {message && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[60] w-[min(92%,28rem)] px-4 py-3 bg-zinc-900 border border-pink-500/50 rounded-xl text-[13px] text-pink-300 text-center shadow-xl pointer-events-none">
+        <div className="toast-smooth fixed top-16 left-1/2 -translate-x-1/2 z-[60] w-[min(92%,28rem)] px-4 py-3 bg-zinc-900 border border-pink-500/50 rounded-xl text-[13px] text-pink-300 text-center shadow-xl pointer-events-none">
           {message}
         </div>
       )}
@@ -3582,7 +3582,7 @@ export default function Home() {
           <div className="max-w-lg mx-auto flex items-center justify-around h-14">
             <button
               onClick={() => setView("feed")}
-              className={view === "feed" ? "text-white" : "text-gray-500"}
+              className={`nav-item ${view === "feed" ? "text-white" : "text-gray-500"}`}
               aria-label="Home"
             >
               <svg width="26" height="26" fill={view === "feed" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -3594,7 +3594,7 @@ export default function Home() {
                 setView("search");
                 if (posts.length === 0) loadPosts();
               }}
-              className={view === "search" ? "text-white" : "text-gray-500"}
+              className={`nav-item ${view === "search" ? "text-white" : "text-gray-500"}`}
               aria-label="Search"
             >
               <svg width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -3604,7 +3604,7 @@ export default function Home() {
             </button>
             <button
               onClick={() => setView("create")}
-              className={view === "create" ? "text-white" : "text-gray-500"}
+              className={`nav-item ${view === "create" ? "text-white" : "text-gray-500"}`}
               aria-label="Post"
             >
               <svg width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -3617,7 +3617,7 @@ export default function Home() {
                 setView("reels");
                 if (posts.length === 0) loadPosts();
               }}
-              className={view === "reels" ? "text-white" : "text-gray-500"}
+              className={`nav-item ${view === "reels" ? "text-white" : "text-gray-500"}`}
               aria-label="Reels"
             >
               <svg width="26" height="26" fill={view === "reels" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
