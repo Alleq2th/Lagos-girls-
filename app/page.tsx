@@ -426,6 +426,7 @@ export default function Home() {
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const feedLoadedRef = useRef(false);
   const bootViewSetRef = useRef(false);
+  const swipeStartX = useRef(0);
 
   useEffect(() => {
     let mounted = true;
@@ -655,7 +656,7 @@ export default function Home() {
     try {
       const { data } = await supabase
         .from("posts")
-        .select(`*, profiles (id, username, display_name, avatar_url, role, location)`)
+        .select(`*, profiles (id, username, display_name, avatar_url, role, location, services)`)
         .order("created_at", { ascending: false })
         .limit(40);
 
@@ -1866,30 +1867,46 @@ export default function Home() {
                     )}
                   </div>
 
-                  {/* Media — carousel or single · fill width, less empty black */}
+                  {/* Media — full image (no heavy crop) + swipe carousel */}
                   {(() => {
                     const mediaItems = parsePrivateItems(post.media_url, post.media_type);
                     const page = carouselPage[post.id] || 0;
                     const cur = mediaItems[page] || mediaItems[0];
                     const multi = mediaItems.length > 1;
+                    const go = (next: number) => {
+                      setCarouselPage((p) => ({
+                        ...p,
+                        [post.id]: Math.max(0, Math.min(mediaItems.length - 1, next)),
+                      }));
+                    };
                     return (
                       <div
-                        className="relative bg-black overflow-hidden"
+                        className="relative bg-black overflow-hidden select-none"
                         onClick={() => handleDoubleTapLike(post.id)}
+                        onTouchStart={(e) => {
+                          swipeStartX.current = e.touches[0].clientX;
+                        }}
+                        onTouchEnd={(e) => {
+                          if (!multi) return;
+                          const dx = e.changedTouches[0].clientX - swipeStartX.current;
+                          if (dx < -50) go(page + 1);
+                          else if (dx > 50) go(page - 1);
+                        }}
                       >
-                        <div className="relative w-full aspect-square max-h-[70vh]">
+                        {/* Instagram-like: show nearly full photo, max height, contain not cover */}
+                        <div className="relative w-full min-h-[280px] max-h-[75vh] flex items-center justify-center bg-black">
                           {cur?.type === "video" ? (
                             <video
                               src={cur.url}
                               controls
                               playsInline
-                              className="absolute inset-0 w-full h-full object-cover"
+                              className="w-full max-h-[75vh] object-contain"
                               onClick={(e) => e.stopPropagation()}
                             />
                           ) : (
                             <img
                               src={cur?.url || post.media_url}
-                              className="absolute inset-0 w-full h-full object-cover"
+                              className="w-full max-h-[75vh] object-contain"
                               alt=""
                               loading="lazy"
                             />
@@ -1897,51 +1914,16 @@ export default function Home() {
                         </div>
                         {multi && (
                           <>
-                            <div className="absolute top-3 right-3 bg-black/60 text-white text-[11px] font-medium px-2 py-0.5 rounded-full">
+                            <div className="absolute top-3 right-3 bg-black/60 text-white text-[11px] font-medium px-2 py-0.5 rounded-full pointer-events-none">
                               {page + 1}/{mediaItems.length}
                             </div>
-                            {page > 0 && (
-                              <button
-                                type="button"
-                                className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setCarouselPage((p) => ({
-                                    ...p,
-                                    [post.id]: page - 1,
-                                  }));
-                                }}
-                              >
-                                ‹
-                              </button>
-                            )}
-                            {page < mediaItems.length - 1 && (
-                              <button
-                                type="button"
-                                className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setCarouselPage((p) => ({
-                                    ...p,
-                                    [post.id]: page + 1,
-                                  }));
-                                }}
-                              >
-                                ›
-                              </button>
-                            )}
-                            <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5">
+                            <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 pointer-events-none">
                               {mediaItems.map((_, i) => (
-                                <button
+                                <span
                                   key={i}
-                                  type="button"
                                   className={`w-1.5 h-1.5 rounded-full ${
                                     i === page ? "bg-pink-500" : "bg-white/40"
                                   }`}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setCarouselPage((p) => ({ ...p, [post.id]: i }));
-                                  }}
                                 />
                               ))}
                             </div>
@@ -2011,35 +1993,56 @@ export default function Home() {
                     </p>
                   )}
 
-                  {/* Book + profile — all posts except your own (old + new accounts) */}
+                  {/* View profile always · Book only if she has services */}
                   {post.user_id !== session?.user?.id &&
                     !String(post.caption || "").startsWith("__anon__") && (
-                    <div className="px-3.5 mt-2 flex gap-2 flex-wrap">
-                      <button
-                        onClick={() => {
-                          if (!requirePremium("Become Premium to book services")) return;
-                          requestService(post.user_id, {
-                            name: "Video Call",
-                            price: 15000,
-                            desc: "From feed",
-                          });
-                        }}
-                        className="text-[12px] font-semibold bg-pink-600 px-3 py-1.5 rounded-full"
-                      >
-                        Book
-                      </button>
-                      <button
-                        onClick={() => openUserProfile(post.user_id)}
-                        className="text-[12px] font-medium text-gray-300 px-2 py-1.5"
-                      >
-                        View profile
-                      </button>
-                      <button
-                        onClick={() => openUserProfile(post.user_id)}
-                        className="text-[12px] font-medium text-gray-500 px-2 py-1.5"
-                      >
-                        Services
-                      </button>
+                    <div className="px-3.5 mt-2 flex gap-2 flex-wrap items-center">
+                      {(() => {
+                        let hasSvc = false;
+                        try {
+                          const raw = (post.profiles as any)?.services;
+                          const list =
+                            typeof raw === "string" ? JSON.parse(raw) : raw;
+                          hasSvc = Array.isArray(list) && list.length > 0;
+                        } catch {}
+                        return hasSvc ? (
+                          <>
+                            <button
+                              onClick={() => {
+                                if (!requirePremium("Become Premium to book services"))
+                                  return;
+                                requestService(post.user_id, {
+                                  name: "Video Call",
+                                  price: 15000,
+                                  desc: "From feed",
+                                });
+                              }}
+                              className="text-[12px] font-semibold bg-pink-600 px-3 py-1.5 rounded-full"
+                            >
+                              Book
+                            </button>
+                            <button
+                              onClick={() => openUserProfile(post.user_id)}
+                              className="text-[12px] font-medium text-gray-300 px-2 py-1.5"
+                            >
+                              View profile
+                            </button>
+                            <button
+                              onClick={() => openUserProfile(post.user_id)}
+                              className="text-[12px] font-medium text-gray-500 px-2 py-1.5"
+                            >
+                              Services
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => openUserProfile(post.user_id)}
+                            className="text-[12px] font-semibold text-pink-500 px-2 py-1.5"
+                          >
+                            View profile
+                          </button>
+                        );
+                      })()}
                     </div>
                   )}
 
@@ -3069,11 +3072,31 @@ export default function Home() {
                       </div>
                       <p className="font-semibold text-[14px]">@{uname}</p>
                     </div>
-                    <div className="relative bg-black aspect-square">
+                    <div
+                      className="relative bg-black min-h-[280px] max-h-[75vh] flex items-center justify-center"
+                      onTouchStart={(e) => {
+                        swipeStartX.current = e.touches[0].clientX;
+                      }}
+                      onTouchEnd={(e) => {
+                        if (!multi) return;
+                        const dx =
+                          e.changedTouches[0].clientX - swipeStartX.current;
+                        if (dx < -50)
+                          setCarouselPage((p) => ({
+                            ...p,
+                            [vid]: Math.min(items.length - 1, page + 1),
+                          }));
+                        else if (dx > 50)
+                          setCarouselPage((p) => ({
+                            ...p,
+                            [vid]: Math.max(0, page - 1),
+                          }));
+                      }}
+                    >
                       {cur?.type === "video" ? (
                         <video
                           src={cur.url}
-                          className="absolute inset-0 w-full h-full object-cover"
+                          className="w-full max-h-[75vh] object-contain"
                           controls
                           playsInline
                           autoPlay
@@ -3081,44 +3104,16 @@ export default function Home() {
                       ) : (
                         <img
                           src={cur?.url || viewingPost.media_url}
-                          className="absolute inset-0 w-full h-full object-cover"
+                          className="w-full max-h-[75vh] object-contain"
                           alt=""
                         />
                       )}
                       {multi && (
                         <>
-                          <span className="absolute top-3 right-3 bg-black/60 text-white text-[11px] px-2 py-0.5 rounded-full">
+                          <span className="absolute top-3 right-3 bg-black/60 text-white text-[11px] px-2 py-0.5 rounded-full pointer-events-none">
                             {page + 1}/{items.length}
                           </span>
-                          {page > 0 && (
-                            <button
-                              type="button"
-                              className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white"
-                              onClick={() =>
-                                setCarouselPage((p) => ({
-                                  ...p,
-                                  [vid]: page - 1,
-                                }))
-                              }
-                            >
-                              ‹
-                            </button>
-                          )}
-                          {page < items.length - 1 && (
-                            <button
-                              type="button"
-                              className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white"
-                              onClick={() =>
-                                setCarouselPage((p) => ({
-                                  ...p,
-                                  [vid]: page + 1,
-                                }))
-                              }
-                            >
-                              ›
-                            </button>
-                          )}
-                          <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5">
+                          <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 pointer-events-none">
                             {items.map((_: any, i: number) => (
                               <span
                                 key={i}
