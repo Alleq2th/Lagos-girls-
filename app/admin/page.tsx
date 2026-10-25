@@ -318,12 +318,12 @@ export default function AdminPage() {
     setLoading(true);
     setMessage("");
     try {
-      // Public multi-file → one carousel post
+      // Public multi-file → one carousel
       if (postType === "public" && files.length > 1) {
         const items: { url: string; type: "image" | "video" }[] = [];
         for (let i = 0; i < files.length; i++) {
-          const file = files[i];
           setMessage(`Uploading carousel… ${i + 1}/${files.length}`);
+          const file = files[i];
           const url = await uploadFile(file);
           items.push({
             url,
@@ -337,6 +337,25 @@ export default function AdminPage() {
           caption: caption || "",
         });
         setMessage(`Carousel posted · ${items.length} items`);
+      } else if (postType === "private" && files.length > 1) {
+        const items: { url: string; type: "image" | "video" }[] = [];
+        for (let i = 0; i < files.length; i++) {
+          setMessage(`Uploading bundle… ${i + 1}/${files.length}`);
+          const file = files[i];
+          const url = await uploadFile(file);
+          items.push({
+            url,
+            type: file.type.startsWith("video") ? "video" : "image",
+          });
+        }
+        await supabase.from("private_media").insert({
+          user_id: selectedAccount.id,
+          media_url: JSON.stringify(items),
+          media_type: items[0].type,
+          title: title || `Bundle · ${items.length} items`,
+          price,
+        });
+        setMessage(`Private bundle · ${items.length} items · ₦${price}`);
       } else {
         for (let i = 0; i < files.length; i++) {
           const file = files[i];
@@ -376,6 +395,8 @@ export default function AdminPage() {
         setMessage(
           postType === "free_anon"
             ? `${files.length} free anonymous video(s) uploaded`
+            : postType === "story"
+            ? `${files.length} story item(s) added`
             : "Posted"
         );
       }
@@ -386,6 +407,41 @@ export default function AdminPage() {
       loadAccountContent(selectedAccount.id);
     } catch (e: any) {
       setMessage(e.message || "Post failed");
+    }
+    setLoading(false);
+  }
+
+  /** Bulk free videos from Accounts list — no need to open one profile */
+  async function handleBulkFreeVideos() {
+    if (files.length === 0) return setMessage("Select videos first");
+    const host =
+      selectedAccount ||
+      accounts.find((a) => a.role === "GIRL") ||
+      accounts[0];
+    if (!host?.id) {
+      return setMessage("Create at least one girl account first (storage host only)");
+    }
+    setLoading(true);
+    setMessage("");
+    try {
+      for (let i = 0; i < files.length; i++) {
+        setMessage(`Free video ${i + 1}/${files.length}…`);
+        const file = files[i];
+        const url = await uploadFile(file);
+        const media_type = file.type.startsWith("video") ? "video" : "image";
+        await supabase.from("posts").insert({
+          user_id: host.id,
+          media_url: url,
+          media_type,
+          caption: `__anon__\n${caption || ""}`.trim(),
+        });
+      }
+      setMessage(`${files.length} free anonymous video(s) live`);
+      setFiles([]);
+      setPreviews([]);
+      setCaption("");
+    } catch (e: any) {
+      setMessage(e.message || "Upload failed");
     }
     setLoading(false);
   }
@@ -1258,6 +1314,33 @@ export default function AdminPage() {
                 className="w-full bg-pink-600 py-3 rounded-xl font-semibold text-sm disabled:opacity-50"
               >
                 {loading ? "Creating..." : "Create account"}
+              </button>
+            </div>
+
+            {/* Bulk free videos — no account open required */}
+            <div className="bg-zinc-900 border border-pink-500/30 rounded-2xl p-4 mb-4">
+              <h3 className="font-bold text-sm mb-1">Free videos (anonymous)</h3>
+              <p className="text-xs text-gray-500 mb-3">
+                Multi-select 30–40 videos. No username on feed. Needs ≥1 girl account
+                as storage host only.
+              </p>
+              <input
+                type="file"
+                accept="video/*,image/*"
+                multiple
+                className="block w-full text-xs text-gray-400 mb-2"
+                onChange={handleFileSelect}
+              />
+              {files.length > 0 && (
+                <p className="text-xs text-pink-400 mb-2">{files.length} file(s) selected</p>
+              )}
+              <button
+                type="button"
+                onClick={handleBulkFreeVideos}
+                disabled={loading || files.length === 0}
+                className="w-full bg-pink-600 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
+              >
+                {loading ? "Uploading…" : `Post ${files.length || ""} free video(s)`}
               </button>
             </div>
 
