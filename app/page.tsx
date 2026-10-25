@@ -526,6 +526,13 @@ export default function Home() {
     }
   }, [chatMessages.length, view]);
 
+  // Toast auto-hide (no need to tap X)
+  useEffect(() => {
+    if (!message) return;
+    const t = setTimeout(() => setMessage(""), 2800);
+    return () => clearTimeout(t);
+  }, [message]);
+
   async function ensureProfile(user: any) {
     if (!user?.id) return null;
     try {
@@ -1636,13 +1643,10 @@ export default function Home() {
         </header>
       )}
 
-      {/* Global toast — always on top of chat/reels */}
+      {/* Global toast — auto dismiss */}
       {message && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[60] w-[min(92%,28rem)] px-4 py-3 bg-zinc-900 border border-pink-500/50 rounded-xl text-[13px] text-pink-300 text-center shadow-xl">
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[60] w-[min(92%,28rem)] px-4 py-3 bg-zinc-900 border border-pink-500/50 rounded-xl text-[13px] text-pink-300 text-center shadow-xl pointer-events-none">
           {message}
-          <button onClick={() => setMessage("")} className="ml-2 text-gray-400">
-            ✕
-          </button>
         </div>
       )}
 
@@ -1873,7 +1877,7 @@ export default function Home() {
                         className="relative bg-black overflow-hidden"
                         onClick={() => handleDoubleTapLike(post.id)}
                       >
-                        <div className="relative w-full aspect-[4/5] max-h-[72vh]">
+                        <div className="relative w-full aspect-square max-h-[70vh]">
                           {cur?.type === "video" ? (
                             <video
                               src={cur.url}
@@ -2670,26 +2674,45 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="grid grid-cols-3 gap-[2px]">
-                  {myPosts.map((p) => (
+                  {myPosts.map((p) => {
+                    const items = parsePrivateItems(p.media_url, p.media_type);
+                    const thumb = items[0];
+                    const multi = items.length > 1;
+                    return (
                     <div
                       key={p.id}
                       className="relative aspect-square bg-zinc-900 overflow-hidden group cursor-pointer"
-                      onClick={() => setViewingPost(p)}
+                      onClick={() =>
+                        setViewingPost({
+                          ...p,
+                          _bundleItems: items,
+                          profiles: profile,
+                        })
+                      }
                     >
-                      {p.media_type === "video" ? (
+                      {thumb?.type === "video" ? (
                         <video
-                          src={p.media_url}
+                          src={thumb.url}
                           className="w-full h-full object-cover"
                           muted
                           playsInline
                           preload="metadata"
                         />
                       ) : (
-                        <img src={p.media_url} className="w-full h-full object-cover" alt="" />
+                        <img
+                          src={thumb?.url || p.media_url}
+                          className="w-full h-full object-cover"
+                          alt=""
+                        />
                       )}
-                      {p.media_type === "video" && (
+                      {thumb?.type === "video" && (
                         <span className="absolute bottom-1 left-1 text-[10px] bg-black/70 px-1.5 py-0.5 rounded text-white">
                           ▶
+                        </span>
+                      )}
+                      {multi && (
+                        <span className="absolute top-1 left-1 text-[10px] bg-black/70 px-1.5 py-0.5 rounded text-white">
+                          ▦ {items.length}
                         </span>
                       )}
                       <button
@@ -2702,7 +2725,8 @@ export default function Home() {
                         ✕
                       </button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -2891,22 +2915,38 @@ export default function Home() {
                 <p className="text-center text-gray-500 text-[13px] py-10">No public posts</p>
               ) : (
                 <div className="grid grid-cols-3 gap-[2px]">
-                  {userPosts.map((p) => (
+                  {userPosts.map((p) => {
+                    const items = parsePrivateItems(p.media_url, p.media_type);
+                    const thumb = items[0];
+                    const multi = items.length > 1;
+                    return (
                     <div
                       key={p.id}
                       className="relative aspect-square bg-zinc-900 overflow-hidden cursor-pointer"
-                      onClick={() => setViewingPost(p)}
+                      onClick={() =>
+                        setViewingPost({
+                          ...p,
+                          _bundleItems: items,
+                          profiles: selectedUser,
+                        })
+                      }
                     >
-                      {p.media_type === "video" ? (
-                        <video src={p.media_url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+                      {thumb?.type === "video" ? (
+                        <video src={thumb.url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
                       ) : (
-                        <img src={p.media_url} className="w-full h-full object-cover" alt="" />
+                        <img src={thumb?.url || p.media_url} className="w-full h-full object-cover" alt="" />
                       )}
-                      {p.media_type === "video" && (
+                      {thumb?.type === "video" && (
                         <span className="absolute bottom-1 left-1 text-[10px] bg-black/70 px-1.5 py-0.5 rounded text-white">▶</span>
                       )}
+                      {multi && (
+                        <span className="absolute top-1 left-1 text-[10px] bg-black/70 px-1.5 py-0.5 rounded text-white">
+                          ▦ {items.length}
+                        </span>
+                      )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -2976,75 +3016,131 @@ export default function Home() {
             )}
           </div>
         )}
-      {/* Full post / private / bundle viewer */}
+      {/* Full post viewer — Instagram style (carousel + caption) */}
         {viewingPost && (
-          <div
-            className="fixed inset-0 z-50 bg-black/95 flex flex-col"
-            onClick={() => setViewingPost(null)}
-          >
-            <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
-              <button onClick={() => setViewingPost(null)} className="text-white text-[15px]">
+          <div className="fixed inset-0 z-50 bg-black flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 shrink-0">
+              <button
+                onClick={() => setViewingPost(null)}
+                className="text-white text-[15px]"
+              >
                 Close
               </button>
-              <span className="text-gray-400 text-[13px]">
-                {Array.isArray((viewingPost as any)._bundleItems) &&
-                (viewingPost as any)._bundleItems.length > 1
-                  ? `Bundle · ${(viewingPost as any)._bundleItems.length}`
-                  : "Post"}
-              </span>
+              <span className="text-gray-300 text-[14px] font-medium">Post</span>
               <span className="w-12" />
             </div>
-            <div
-              className="flex-1 overflow-y-auto p-2 space-y-3"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {Array.isArray((viewingPost as any)._bundleItems) &&
-              (viewingPost as any)._bundleItems.length > 0 ? (
-                (viewingPost as any)._bundleItems.map(
-                  (item: { url: string; type: string }, idx: number) => (
-                    <div key={idx} className="flex justify-center">
-                      {item.type === "video" ? (
+            <div className="flex-1 overflow-y-auto">
+              {(() => {
+                const items =
+                  Array.isArray((viewingPost as any)._bundleItems) &&
+                  (viewingPost as any)._bundleItems.length
+                    ? (viewingPost as any)._bundleItems
+                    : parsePrivateItems(
+                        viewingPost.media_url,
+                        viewingPost.media_type
+                      );
+                const vid = viewingPost.id || "view";
+                const page = carouselPage[vid] || 0;
+                const cur = items[page] || items[0];
+                const multi = items.length > 1;
+                const cap = String(viewingPost.caption || "").replace(
+                  /^__anon__\n?/,
+                  ""
+                );
+                const uname =
+                  viewingPost.profiles?.username ||
+                  profile?.username ||
+                  "user";
+                return (
+                  <div className="max-w-lg mx-auto">
+                    <div className="flex items-center gap-2.5 px-3 py-2.5">
+                      <div className="w-9 h-9 rounded-full bg-zinc-800 overflow-hidden">
+                        {(viewingPost.profiles?.avatar_url ||
+                          profile?.avatar_url) && (
+                          <img
+                            src={
+                              viewingPost.profiles?.avatar_url ||
+                              profile?.avatar_url
+                            }
+                            className="w-full h-full object-cover"
+                            alt=""
+                          />
+                        )}
+                      </div>
+                      <p className="font-semibold text-[14px]">@{uname}</p>
+                    </div>
+                    <div className="relative bg-black aspect-square">
+                      {cur?.type === "video" ? (
                         <video
-                          src={item.url}
-                          className="max-h-[70vh] max-w-full rounded-lg"
+                          src={cur.url}
+                          className="absolute inset-0 w-full h-full object-cover"
                           controls
                           playsInline
+                          autoPlay
                         />
                       ) : (
                         <img
-                          src={item.url}
-                          className="max-h-[70vh] max-w-full object-contain rounded-lg"
+                          src={cur?.url || viewingPost.media_url}
+                          className="absolute inset-0 w-full h-full object-cover"
                           alt=""
                         />
                       )}
+                      {multi && (
+                        <>
+                          <span className="absolute top-3 right-3 bg-black/60 text-white text-[11px] px-2 py-0.5 rounded-full">
+                            {page + 1}/{items.length}
+                          </span>
+                          {page > 0 && (
+                            <button
+                              type="button"
+                              className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white"
+                              onClick={() =>
+                                setCarouselPage((p) => ({
+                                  ...p,
+                                  [vid]: page - 1,
+                                }))
+                              }
+                            >
+                              ‹
+                            </button>
+                          )}
+                          {page < items.length - 1 && (
+                            <button
+                              type="button"
+                              className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white"
+                              onClick={() =>
+                                setCarouselPage((p) => ({
+                                  ...p,
+                                  [vid]: page + 1,
+                                }))
+                              }
+                            >
+                              ›
+                            </button>
+                          )}
+                          <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5">
+                            {items.map((_: any, i: number) => (
+                              <span
+                                key={i}
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  i === page ? "bg-pink-500" : "bg-white/40"
+                                }`}
+                              />
+                            ))}
+                          </div>
+                        </>
+                      )}
                     </div>
-                  )
-                )
-              ) : viewingPost.media_type === "video" ? (
-                <div className="flex justify-center">
-                  <video
-                    src={viewingPost.media_url}
-                    className="max-h-[80vh] max-w-full rounded-lg"
-                    controls
-                    autoPlay
-                    playsInline
-                  />
-                </div>
-              ) : (
-                <div className="flex justify-center">
-                  <img
-                    src={viewingPost.media_url}
-                    className="max-h-[80vh] max-w-full object-contain rounded-lg"
-                    alt=""
-                  />
-                </div>
-              )}
+                    {cap && (
+                      <p className="px-3 py-3 text-[14px]">
+                        <span className="font-semibold mr-1.5">{uname}</span>
+                        {cap}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
-            {viewingPost.caption && (
-              <p className="px-4 py-3 text-[14px] text-gray-300 border-t border-zinc-800">
-                {viewingPost.caption}
-              </p>
-            )}
           </div>
         )}
 
