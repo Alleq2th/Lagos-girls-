@@ -1142,36 +1142,92 @@ export default function Home() {
       return;
     }
 
-    // Explicit email, fixed fake pattern, old gmail pattern
-    const candidates = [
-      email?.trim(),
-      `${clean}@lagosgirls.app`,
-      `${clean}@gmail.com`,
-    ].filter(Boolean) as string[];
-
-    let lastError = "Invalid login credentials";
-    for (const tryEmail of candidates) {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: tryEmail,
-        password,
-      });
-      if (!error) {
-        setLoading(false);
-        return;
-      }
-      lastError = error.message;
-    }
-
-    // Common mistakes for admin fakes
     if (password === "lagos2025") {
       setMessage(
         "Wrong password for girls. Use FakePass123! (not the admin password)"
       );
-    } else {
-      setMessage(
-        `${lastError}. Fake accounts: password FakePass123! — If still fails, open Admin → that account → Fix login`
-      );
+      setLoading(false);
+      return;
     }
+
+    const trySignIn = async (pass: string) => {
+      const candidates = [
+        email?.trim(),
+        `${clean}@lagosgirls.app`,
+        `${clean}@gmail.com`,
+      ].filter(Boolean) as string[];
+      for (const tryEmail of candidates) {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: tryEmail,
+          password: pass,
+        });
+        if (!error) return true;
+      }
+      return false;
+    };
+
+    // 1) Normal login
+    if (await trySignIn(password)) {
+      setLoading(false);
+      return;
+    }
+
+    // 2) Fake account: auto-repair then login (needs SERVICE_ROLE on Vercel)
+    const isFakePass =
+      password === "FakePass123!" ||
+      password === "fakepass123!" ||
+      password === "FakePass123";
+
+    if (isFakePass) {
+      setMessage("Fixing fake account login…");
+      try {
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("id, username")
+          .eq("username", clean)
+          .maybeSingle();
+
+        const res = await fetch("/api/admin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "fix-login",
+            username: clean,
+            userId: prof?.id,
+            adminSecret: "lagos2025",
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          setMessage(
+            data?.need_service_role
+              ? "Add SUPABASE_SERVICE_ROLE_KEY in Vercel env, redeploy, try again."
+              : data?.error ||
+                  "Could not fix login. Check Vercel SERVICE_ROLE key."
+          );
+          setLoading(false);
+          return;
+        }
+
+        // After fix, password is always FakePass123!
+        if (await trySignIn("FakePass123!")) {
+          setLoading(false);
+          return;
+        }
+        setMessage(
+          "Account was fixed but login still failed. Wait 10s and try FakePass123! again."
+        );
+      } catch (e: any) {
+        setMessage(e?.message || "Login fix request failed");
+      }
+      setLoading(false);
+      return;
+    }
+
+    setMessage(
+      "Invalid login credentials. Admin fakes use password FakePass123!"
+    );
     setLoading(false);
   }
 
