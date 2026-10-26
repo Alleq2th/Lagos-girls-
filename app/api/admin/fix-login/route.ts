@@ -7,8 +7,8 @@ import { NextRequest, NextResponse } from "next/server";
  * - Sets password to FakePass123!
  * - Marks email confirmed
  *
- * Needs SUPABASE_SERVICE_ROLE_KEY in Vercel env (Settings → Environment Variables).
- * Get it: Supabase → Project Settings → API → service_role (secret).
+ * Needs SUPABASE_SERVICE_ROLE_KEY in Vercel env.
+ * Supabase → Project Settings → API → service_role
  */
 export async function POST(req: NextRequest) {
   try {
@@ -50,7 +50,6 @@ export async function POST(req: NextRequest) {
     const targetEmail = `${username}@lagosgirls.app`;
     const password = "FakePass123!";
 
-    // Prefer exact profile id when provided
     if (userId) {
       const { error } = await admin.auth.admin.updateUserById(userId, {
         email: targetEmail,
@@ -66,16 +65,17 @@ export async function POST(req: NextRequest) {
           message: `Login ready: ${username} / ${password}`,
         });
       }
-      // fall through to search if id update failed
     }
 
-    // Search auth users for matching username / email prefix
     let page = 1;
     const perPage = 100;
     let foundId: string | null = userId || null;
 
     while (!foundId && page <= 20) {
-      const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+      const { data, error } = await admin.auth.admin.listUsers({
+        page,
+        perPage,
+      });
       if (error) throw error;
       const users = data?.users || [];
       const hit = users.find((u) => {
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
         const em = (u.email || "").toLowerCase();
         return (
           meta.username === username ||
-          em.startsWith(`${username}@`) ||
+          em.startsWith(username + "@") ||
           em === targetEmail
         );
       });
@@ -93,7 +93,6 @@ export async function POST(req: NextRequest) {
     }
 
     if (!foundId) {
-      // Create brand-new auth user (profile may already exist with this id mismatch — last resort)
       const { data: created, error: createErr } =
         await admin.auth.admin.createUser({
           email: targetEmail,
@@ -111,8 +110,6 @@ export async function POST(req: NextRequest) {
         ok: true,
         email: targetEmail,
         password,
-        warning:
-          "Created new auth user. If posts still belong to old id, login works but profile link may need admin check.",
         userId: created.user?.id,
         message: `Login ready: ${username} / ${password}`,
       });
@@ -124,9 +121,19 @@ export async function POST(req: NextRequest) {
       email_confirm: true,
       user_metadata: { username },
     });
+
     if (updErr) {
       return NextResponse.json({ error: updErr.message }, { status: 400 });
     }
 
-    return NextRespo
-... 
+    return NextResponse.json({
+      ok: true,
+      email: targetEmail,
+      password,
+      message: `Login ready: ${username} / ${password}`,
+    });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "fix-login failed";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
