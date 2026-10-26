@@ -43,10 +43,10 @@ a:active {
 /* Feed cards — less paint jank while scrolling */
 article {
   content-visibility: auto;
-  contain-intrinsic-size: 480px;
+  contain-intrinsic-size: 520px;
 }
 
-/* Media & carousel */
+/* Media & carousel — Instagram-like horizontal swipe */
 img,
 video {
   -webkit-user-drag: none;
@@ -55,6 +55,21 @@ video {
 
 img {
   image-rendering: auto;
+}
+
+.snap-x {
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.snap-center {
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+}
+
+/* Soften empty media flash */
+.bg-zinc-950 {
+  background-color: #09090b;
 }
 
 /* Hide scrollbar but keep scroll */

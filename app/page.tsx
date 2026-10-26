@@ -2010,62 +2010,72 @@ export default function Home() {
                     )}
                   </div>
 
-                  {/* Media — full image (no heavy crop) + swipe carousel */}
+                  {/* Media — Instagram-style horizontal snap carousel (smooth swipe) */}
                   {(() => {
                     const mediaItems = parsePrivateItems(post.media_url, post.media_type);
                     const page = carouselPage[post.id] || 0;
-                    const cur = mediaItems[page] || mediaItems[0];
                     const multi = mediaItems.length > 1;
-                    const go = (next: number) => {
-                      setCarouselPage((p) => ({
-                        ...p,
-                        [post.id]: Math.max(0, Math.min(mediaItems.length - 1, next)),
-                      }));
-                    };
                     return (
                       <div
-                        className="relative bg-black overflow-hidden select-none"
+                        className="relative bg-zinc-950 select-none"
                         onClick={() => handleDoubleTapLike(post.id)}
-                        onTouchStart={(e) => {
-                          swipeStartX.current = e.touches[0].clientX;
-                        }}
-                        onTouchEnd={(e) => {
-                          if (!multi) return;
-                          const dx = e.changedTouches[0].clientX - swipeStartX.current;
-                          if (dx < -50) go(page + 1);
-                          else if (dx > 50) go(page - 1);
-                        }}
                       >
-                        {/* Instagram-like: show nearly full photo, max height, contain not cover */}
-                        <div className="relative w-full min-h-[280px] max-h-[75vh] flex items-center justify-center bg-black">
-                          {cur?.type === "video" ? (
-                            <video
-                              src={cur.url}
-                              controls
-                              playsInline
-                              className="w-full max-h-[75vh] object-contain"
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          ) : (
-                            <img
-                              src={cur?.url || post.media_url}
-                              className="w-full max-h-[75vh] object-contain"
-                              alt=""
-                              loading="lazy"
-                            />
-                          )}
+                        <div
+                          className="flex w-full overflow-x-auto snap-x snap-mandatory scrollbar-hide"
+                          style={{
+                            WebkitOverflowScrolling: "touch",
+                            scrollBehavior: "smooth",
+                          }}
+                          onScroll={(e) => {
+                            if (!multi) return;
+                            const el = e.currentTarget;
+                            const w = el.clientWidth || 1;
+                            const i = Math.round(el.scrollLeft / w);
+                            if (i !== page) {
+                              setCarouselPage((p) => ({ ...p, [post.id]: i }));
+                            }
+                          }}
+                        >
+                          {mediaItems.map((item: any, i: number) => (
+                            <div
+                              key={i}
+                              className="w-full min-w-full flex-shrink-0 snap-center snap-always flex items-center justify-center min-h-[280px] max-h-[75vh] bg-zinc-950"
+                            >
+                              {item?.type === "video" ? (
+                                <video
+                                  src={item.url}
+                                  controls
+                                  playsInline
+                                  preload={i === 0 ? "metadata" : "none"}
+                                  className="w-full max-h-[75vh] object-contain"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              ) : (
+                                <img
+                                  src={item?.url || post.media_url}
+                                  className="w-full max-h-[75vh] object-contain"
+                                  alt=""
+                                  loading={i === 0 ? "eager" : "lazy"}
+                                  decoding="async"
+                                  draggable={false}
+                                />
+                              )}
+                            </div>
+                          ))}
                         </div>
                         {multi && (
                           <>
-                            <div className="absolute top-3 right-3 bg-black/60 text-white text-[11px] font-medium px-2 py-0.5 rounded-full pointer-events-none">
+                            <div className="absolute top-3 right-3 bg-black/55 text-white text-[11px] font-medium px-2 py-0.5 rounded-full pointer-events-none z-10">
                               {page + 1}/{mediaItems.length}
                             </div>
-                            <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 pointer-events-none">
-                              {mediaItems.map((_, i) => (
+                            <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 pointer-events-none z-10">
+                              {mediaItems.map((_: any, i: number) => (
                                 <span
                                   key={i}
-                                  className={`w-1.5 h-1.5 rounded-full ${
-                                    i === page ? "bg-pink-500" : "bg-white/40"
+                                  className={`h-1.5 rounded-full transition-all duration-200 ${
+                                    i === page
+                                      ? "w-4 bg-pink-500"
+                                      : "w-1.5 bg-white/40"
                                   }`}
                                 />
                               ))}
@@ -3215,53 +3225,60 @@ export default function Home() {
                       </div>
                       <p className="font-semibold text-[14px]">@{uname}</p>
                     </div>
-                    <div
-                      className="relative bg-black min-h-[280px] max-h-[75vh] flex items-center justify-center"
-                      onTouchStart={(e) => {
-                        swipeStartX.current = e.touches[0].clientX;
-                      }}
-                      onTouchEnd={(e) => {
-                        if (!multi) return;
-                        const dx =
-                          e.changedTouches[0].clientX - swipeStartX.current;
-                        if (dx < -50)
-                          setCarouselPage((p) => ({
-                            ...p,
-                            [vid]: Math.min(items.length - 1, page + 1),
-                          }));
-                        else if (dx > 50)
-                          setCarouselPage((p) => ({
-                            ...p,
-                            [vid]: Math.max(0, page - 1),
-                          }));
-                      }}
-                    >
-                      {cur?.type === "video" ? (
-                        <video
-                          src={cur.url}
-                          className="w-full max-h-[75vh] object-contain"
-                          controls
-                          playsInline
-                          autoPlay
-                        />
-                      ) : (
-                        <img
-                          src={cur?.url || viewingPost.media_url}
-                          className="w-full max-h-[75vh] object-contain"
-                          alt=""
-                        />
-                      )}
+                    <div className="relative bg-zinc-950">
+                      <div
+                        className="flex w-full overflow-x-auto snap-x snap-mandatory scrollbar-hide"
+                        style={{
+                          WebkitOverflowScrolling: "touch",
+                          scrollBehavior: "smooth",
+                        }}
+                        onScroll={(e) => {
+                          if (!multi) return;
+                          const el = e.currentTarget;
+                          const w = el.clientWidth || 1;
+                          const i = Math.round(el.scrollLeft / w);
+                          if (i !== page) {
+                            setCarouselPage((p) => ({ ...p, [vid]: i }));
+                          }
+                        }}
+                      >
+                        {items.map((item: any, i: number) => (
+                          <div
+                            key={i}
+                            className="w-full min-w-full flex-shrink-0 snap-center flex items-center justify-center min-h-[280px] max-h-[75vh] bg-zinc-950"
+                          >
+                            {item?.type === "video" ? (
+                              <video
+                                src={item.url}
+                                className="w-full max-h-[75vh] object-contain"
+                                controls
+                                playsInline
+                                autoPlay={i === page}
+                              />
+                            ) : (
+                              <img
+                                src={item?.url || viewingPost.media_url}
+                                className="w-full max-h-[75vh] object-contain"
+                                alt=""
+                                loading={i === 0 ? "eager" : "lazy"}
+                                decoding="async"
+                                draggable={false}
+                              />
+                            )}
+                          </div>
+                        ))}
+                      </div>
                       {multi && (
                         <>
-                          <span className="absolute top-3 right-3 bg-black/60 text-white text-[11px] px-2 py-0.5 rounded-full pointer-events-none">
+                          <span className="absolute top-3 right-3 bg-black/55 text-white text-[11px] px-2 py-0.5 rounded-full pointer-events-none z-10">
                             {page + 1}/{items.length}
                           </span>
-                          <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 pointer-events-none">
+                          <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 pointer-events-none z-10">
                             {items.map((_: any, i: number) => (
                               <span
                                 key={i}
-                                className={`w-1.5 h-1.5 rounded-full ${
-                                  i === page ? "bg-pink-500" : "bg-white/40"
+                                className={`h-1.5 rounded-full transition-all duration-200 ${
+                                  i === page ? "w-4 bg-pink-500" : "w-1.5 bg-white/40"
                                 }`}
                               />
                             ))}
