@@ -476,10 +476,11 @@ export default function AdminPage() {
     setLoading(true);
     setMessage("Fixing login…");
     try {
-      const res = await fetch("/api/admin/fix-login", {
+      const res = await fetch("/api/admin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          action: "fix-login",
           username: acc.username,
           userId: acc.id,
           adminSecret: "lagos2025",
@@ -499,6 +500,91 @@ export default function AdminPage() {
       }
     } catch (e: any) {
       setMessage(e.message || "Fix login failed");
+    }
+    setLoading(false);
+  }
+
+  async function deleteAccountFull(acc: any) {
+    if (!acc?.id) return;
+    const ok = confirm(
+      `DELETE @${acc.username} forever?\n\nRemoves: profile, posts, stories, likes, comments, follows, messages, and Supabase login.`
+    );
+    if (!ok) return;
+    setLoading(true);
+    setMessage("Deleting account…");
+    try {
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete-account",
+          userId: acc.id,
+          adminSecret: "lagos2025",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok && res.status !== 207) {
+        setMessage(data.error || "Delete failed");
+      } else {
+        setMessage(data.message || "Account deleted");
+        setSelectedAccount(null);
+        loadAccounts();
+        loadStats();
+      }
+    } catch (e: any) {
+      setMessage(e.message || "Delete failed");
+    }
+    setLoading(false);
+  }
+
+  async function banAccount(acc: any, banned: boolean) {
+    if (!acc?.id) return;
+    setLoading(true);
+    setMessage(banned ? "Banning…" : "Unbanning…");
+    try {
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "ban",
+          userId: acc.id,
+          banned,
+          adminSecret: "lagos2025",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) setMessage(data.error || "Ban failed");
+      else {
+        setMessage(data.message);
+        setSelectedAccount({ ...acc, is_banned: banned });
+        loadAccounts();
+      }
+    } catch (e: any) {
+      setMessage(e.message || "Ban failed");
+    }
+    setLoading(false);
+  }
+
+  async function adminEditStats(
+    action: string,
+    extra: Record<string, any>
+  ) {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          adminSecret: "lagos2025",
+          ...extra,
+        }),
+      });
+      const data = await res.json();
+      setMessage(data.message || data.error || "Done");
+      if (selectedAccount) loadAccountContent(selectedAccount.id);
+    } catch (e: any) {
+      setMessage(e.message || "Failed");
     }
     setLoading(false);
   }
@@ -786,6 +872,35 @@ export default function AdminPage() {
             >
               Fix login (username + FakePass123!)
             </button>
+            <button
+              onClick={() =>
+                banAccount(selectedAccount, !selectedAccount.is_banned)
+              }
+              disabled={loading}
+              className="py-2.5 rounded-xl text-sm font-semibold bg-orange-700 col-span-1 disabled:opacity-50"
+            >
+              {selectedAccount.is_banned ? "Unban" : "Ban"}
+            </button>
+            <button
+              onClick={() => deleteAccountFull(selectedAccount)}
+              disabled={loading}
+              className="py-2.5 rounded-xl text-sm font-semibold bg-red-700 col-span-1 disabled:opacity-50"
+            >
+              Delete account
+            </button>
+            <button
+              onClick={() => {
+                const n = prompt("Set display followers_count to:", "1000");
+                if (n == null) return;
+                adminEditStats("set_followers", {
+                  userId: selectedAccount.id,
+                  count: Number(n),
+                });
+              }}
+              className="py-2.5 rounded-xl text-sm font-semibold bg-zinc-800 col-span-2"
+            >
+              Edit followers count
+            </button>
           </div>
 
           {message && (
@@ -956,6 +1071,30 @@ export default function AdminPage() {
                     {multi > 1 ? `Carousel · ${multi} · ` : ""}
                     {p.caption || "—"}
                   </p>
+                  <button
+                    onClick={() =>
+                      adminEditStats("add_likes", { postId: p.id, count: 10 })
+                    }
+                    className="text-pink-400 text-xs"
+                  >
+                    +Likes
+                  </button>
+                  <button
+                    onClick={() =>
+                      adminEditStats("clear_likes", { postId: p.id })
+                    }
+                    className="text-gray-400 text-xs"
+                  >
+                    Clear likes
+                  </button>
+                  <button
+                    onClick={() =>
+                      adminEditStats("clear_comments", { postId: p.id })
+                    }
+                    className="text-gray-400 text-xs"
+                  >
+                    Clear comments
+                  </button>
                   <button
                     onClick={() => deleteContent("posts", p.id)}
                     className="text-red-400 text-xs"
