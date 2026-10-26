@@ -253,7 +253,8 @@ export default function AdminPage() {
         .toLowerCase()
         .replace(/[^a-z0-9]/g, "")
         .slice(0, 20);
-      const fakeEmail = `${cleanUsername}${Date.now()}@gmail.com`;
+      // Fixed email so login works with username + FakePass123!
+      const fakeEmail = `${cleanUsername}@lagosgirls.app`;
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: fakeEmail,
         password: "FakePass123!",
@@ -291,7 +292,9 @@ export default function AdminPage() {
       });
       if (profileError) throw profileError;
 
-      setMessage(`Created @${cleanUsername}`);
+      setMessage(
+        `Created @${cleanUsername} — login: username + password FakePass123!`
+      );
       setUsername("");
       setDisplayName("");
       setBio("");
@@ -466,6 +469,38 @@ export default function AdminPage() {
     } catch (e: any) {
       setServicesMsg("Error: " + (e.message || "invalid JSON"));
     }
+  }
+
+  async function fixAccountLogin(acc: any) {
+    if (!acc?.username) return;
+    setLoading(true);
+    setMessage("Fixing login…");
+    try {
+      const res = await fetch("/api/admin/fix-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: acc.username,
+          userId: acc.id,
+          adminSecret: "lagos2025",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage(
+          data.error ||
+            "Fix failed. Add SUPABASE_SERVICE_ROLE_KEY on Vercel (Supabase → Settings → API → service_role)."
+        );
+      } else {
+        setMessage(
+          data.message ||
+            `OK — login as ${acc.username} / FakePass123!`
+        );
+      }
+    } catch (e: any) {
+      setMessage(e.message || "Fix login failed");
+    }
+    setLoading(false);
   }
 
   async function togglePremium(acc: any) {
@@ -743,6 +778,13 @@ export default function AdminPage() {
               className="py-2.5 rounded-xl text-sm font-semibold bg-zinc-800 col-span-2"
             >
               Apply default services
+            </button>
+            <button
+              onClick={() => fixAccountLogin(selectedAccount)}
+              disabled={loading}
+              className="py-2.5 rounded-xl text-sm font-semibold bg-pink-600 col-span-2 disabled:opacity-50"
+            >
+              Fix login (username + FakePass123!)
             </button>
           </div>
 
