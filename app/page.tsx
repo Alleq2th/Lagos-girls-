@@ -1135,9 +1135,43 @@ export default function Home() {
   async function handleLogin() {
     setLoading(true);
     setMessage("");
-    const finalEmail = email || `${username.toLowerCase().replace(/[^a-z0-9]/g, "")}@gmail.com`;
-    const { error } = await supabase.auth.signInWithPassword({ email: finalEmail, password });
-    if (error) setMessage(error.message);
+    const clean = username.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (!clean || !password) {
+      setMessage("Enter username and password");
+      setLoading(false);
+      return;
+    }
+
+    // Explicit email, fixed fake pattern, old gmail pattern
+    const candidates = [
+      email?.trim(),
+      `${clean}@lagosgirls.app`,
+      `${clean}@gmail.com`,
+    ].filter(Boolean) as string[];
+
+    let lastError = "Invalid login credentials";
+    for (const tryEmail of candidates) {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: tryEmail,
+        password,
+      });
+      if (!error) {
+        setLoading(false);
+        return;
+      }
+      lastError = error.message;
+    }
+
+    // Common mistakes for admin fakes
+    if (password === "lagos2025") {
+      setMessage(
+        "Wrong password for girls. Use FakePass123! (not the admin password)"
+      );
+    } else {
+      setMessage(
+        `${lastError}. Fake accounts: password FakePass123! — If still fails, open Admin → that account → Fix login`
+      );
+    }
     setLoading(false);
   }
 
@@ -1567,14 +1601,18 @@ export default function Home() {
             />
             <input
               type="password"
-              placeholder="Password"
+              placeholder="Password (fakes: FakePass123!)"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3"
             />
+            <p className="text-[11px] text-gray-500 -mt-1 px-1">
+              Admin-created girls: password is always{" "}
+              <span className="text-pink-400">FakePass123!</span> — not lagos2025
+            </p>
             <input
               type="email"
-              placeholder="Email (optional)"
+              placeholder="Email (optional — leave empty for fakes)"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-sm opacity-80"
