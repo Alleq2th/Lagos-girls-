@@ -392,6 +392,7 @@ export default function Home() {
   // Auth
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [username, setUsername] = useState("");
   const [role, setRole] = useState<"GUY" | "GIRL">("GUY");
   const [agreed, setAgreed] = useState(false);
@@ -565,12 +566,44 @@ export default function Home() {
         return data;
       }
 
-      // Profile missing — create one in the database (required for likes/comments)
-      const username =
+      // Profile missing for this auth id
+      let baseName = (
         user.user_metadata?.username ||
         user.email?.split("@")[0] ||
-        "user" + Date.now().toString().slice(-6);
+        "user"
+      )
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "")
+        .slice(0, 20);
+      if (!baseName) baseName = "user";
 
+      // If username already belongs to ANOTHER profile id → this session is orphaned
+      const { data: byName } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("username", baseName)
+        .maybeSingle();
+
+      if (byName && byName.id !== user.id) {
+        // Broken link: auth user ≠ profile that owns the username
+        setMessage(
+          `This account needs a reset. Log out and try again, or contact support.`
+        );
+        await supabase.auth.signOut();
+        setSession(null);
+        setProfile(null);
+        setView("auth");
+        return null;
+      }
+
+      // Fresh account — use unique username if needed
+      let username = baseName;
+      if (byName?.id === user.id) {
+        // shouldn't happen (would have found by id)
+        setProfile(byName);
+        return byName;
+      }
+      // no conflict — create profile
       const role = user.user_metadata?.role || "GUY";
       const defaultServices =
         role === "GIRL"
@@ -591,7 +624,6 @@ export default function Home() {
       };
       if (defaultServices) newProfile.services = defaultServices;
 
-      // Use upsert so it works even if a race creates it first
       const { data: created, error: insertError } = await supabase
         .from("profiles")
         .upsert(newProfile, { onConflict: "id" })
@@ -608,22 +640,25 @@ export default function Home() {
       }
 
       if (insertError) {
-        console.error("ensureProfile insert error:", insertError);
+        // Last resort: unique username suffix so likes work for this auth user
+        const alt = (baseName + Date.now().toString().slice(-4)).slice(0, 20);
+        const { data: created2 } = await supabase
+          .from("profiles")
+          .upsert(
+            { ...newProfile, username: alt, display_name: alt },
+            { onConflict: "id" }
+          )
+          .select()
+          .maybeSingle();
+        if (created2) {
+          setProfile(created2);
+          setMessage(
+            `Profile created as @${alt} (old @${baseName} is another account). Use Admin → Delete broken accounts.`
+          );
+          return created2;
+        }
         setMessage("Profile setup failed: " + insertError.message);
       }
-
-      // Still set local state so UI is not blank, but likes will fail until profile exists in DB
-      const fallback = {
-        id: user.id,
-        username,
-        display_name: username,
-        bio: null,
-        avatar_url: null,
-        role: (user.user_metadata?.role || "GUY") as "GUY" | "GIRL",
-        location: null,
-        is_premium: false,
-      };
-      setProfile(fallback as any);
       return null;
     } catch (e) {
       console.error("ensureProfile exception:", e);
@@ -1143,9 +1178,7 @@ export default function Home() {
     }
 
     if (password === "lagos2025") {
-      setMessage(
-        "Wrong password for girls. Use FakePass123! (not the admin password)"
-      );
+      setMessage("Invalid login credentials");
       setLoading(false);
       return;
     }
@@ -1216,7 +1249,7 @@ export default function Home() {
           return;
         }
         setMessage(
-          "Account was fixed but login still failed. Wait 10s and try FakePass123! again."
+          "Login failed. Please try again."
         );
       } catch (e: any) {
         setMessage(e?.message || "Login fix request failed");
@@ -1226,14 +1259,25 @@ export default function Home() {
     }
 
     setMessage(
-      "Invalid login credentials. Admin fakes use password FakePass123!"
+      "Invalid login credentials"
     );
     setLoading(false);
   }
 
   async function handleLogout() {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      /* ignore */
+    }
+    setSession(null);
+    setProfile(null);
+    setPosts([]);
+    setFollowingIds([]);
+    feedLoadedRef.current = false;
+    bootViewSetRef.current = true;
     setView("auth");
+    setMessage("");
   }
     // ========== PROFILE UPDATE ==========
   async function updateProfile() {
@@ -1655,20 +1699,25 @@ export default function Home() {
               onChange={(e) => setUsername(e.target.value)}
               className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3"
             />
-            <input
-              type="password"
-              placeholder="Password (fakes: FakePass123!)"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3"
-            />
-            <p className="text-[11px] text-gray-500 -mt-1 px-1">
-              Admin-created girls: password is always{" "}
-              <span className="text-pink-400">FakePass123!</span> — not lagos2025
-            </p>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 pr-12"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-white"
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
             <input
               type="email"
-              placeholder="Email (optional — leave empty for fakes)"
+              placeholder="Email (optional)"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-sm opacity-80"
