@@ -12,6 +12,18 @@ import {
 } from "../lib/chatbot";
 import type { Profile, Post, PrivateMedia } from "../types";
 
+
+const GIFT_CATALOG = [
+  { id: "rose", name: "Rose", emoji: "🌹", price: 500 },
+  { id: "kiss", name: "Kiss", emoji: "💋", price: 1500 },
+  { id: "fire", name: "Fire", emoji: "🔥", price: 3000 },
+  { id: "diamond", name: "Diamond", emoji: "💎", price: 10000 },
+  { id: "crown", name: "Crown", emoji: "👑", price: 25000 },
+  { id: "car", name: "Sports Car", emoji: "🏎️", price: 100000 },
+  { id: "yacht", name: "Yacht", emoji: "🛥️", price: 500000 },
+  { id: "island", name: "Private Island", emoji: "🏝️", price: 1000000 },
+];
+
 export default function Home() {
   const [session, setSession] = useState<any>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -401,6 +413,10 @@ export default function Home() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [giftSheet, setGiftSheet] = useState<{
+    userId: string;
+    context?: string;
+  } | null>(null);
   const [username, setUsername] = useState("");
   const [role, setRole] = useState<"GUY" | "GIRL">("GUY");
   const [agreed, setAgreed] = useState(false);
@@ -1007,7 +1023,37 @@ export default function Home() {
     }
   }
 
-  async function requestService(
+  
+  async function sendGift(
+    girlId: string,
+    gift: { id: string; name: string; emoji: string; price: number },
+    context?: string
+  ) {
+    if (!session || !profile) return;
+    openPaySheet(
+      gift.emoji + " " + gift.name,
+      gift.price,
+      "Gift for @" + (context || "her") + " — after payment message: I sent you a " + gift.name
+    );
+    // Log gift intent in chat if possible
+    try {
+      if (profile.is_premium) {
+        const text =
+          "I want to send you a " +
+          gift.emoji +
+          " " +
+          gift.name +
+          " (₦" +
+          gift.price.toLocaleString() +
+          "). How do I pay?";
+        await startChat(girlId, text);
+      }
+    } catch {}
+    setGiftSheet(null);
+    setMessage(gift.emoji + " " + gift.name + " — complete payment to send");
+  }
+
+async function requestService(
     girlId: string,
     service: { name: string; price: number; desc?: string }
   ) {
@@ -1068,7 +1114,16 @@ export default function Home() {
       let servicesList = parseServices(chat.girl?.services);
       if (!servicesList.length) servicesList = defaultChatServices();
       setChatServices(servicesList);
-      if (isMoneyIntent(body)) setShowChatBook(true);
+      const money = isMoneyIntent(body);
+      const flirty =
+        /sexy|body|meet|come|night|bed|call|video|book|service|how much|price|naira|pay/i.test(
+          body
+        );
+      if (money || flirty) setShowChatBook(true);
+      // Soft upsell every few messages
+      if ((history.filter((h) => h.role === "user").length + 1) % 3 === 0) {
+        setShowChatBook(true);
+      }
       saveChatMemory(convId, body);
       const memory = loadChatMemory(convId);
 
@@ -1112,6 +1167,21 @@ export default function Home() {
 
         if (!reply) {
           reply = generateReply(body, personality, history, girlName);
+        }
+
+        // Money / service push (no bank details in chat)
+        if (money || flirty) {
+          const top = servicesList[0];
+          if (top && !/book|service|₦|naira|pay/i.test(reply)) {
+            reply =
+              reply +
+              "\n\nmy " +
+              top.name +
+              " is ₦" +
+              Number(top.price).toLocaleString() +
+              " if you want 💕 tap Book below";
+          }
+          setShowChatBook(true);
         }
 
         await supabase.from("messages").insert({
@@ -2161,6 +2231,24 @@ export default function Home() {
                     </p>
                   )}
 
+                  <div className="px-3.5 pb-1">
+                    {post.user_id !== session?.user?.id &&
+                      !String(post.caption || "").startsWith("__anon__") && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setGiftSheet({
+                            userId: post.user_id,
+                            context: post.profiles?.username || "girl",
+                          })
+                        }
+                        className="text-[12px] text-pink-400 font-semibold"
+                      >
+                        🎁 Gift
+                      </button>
+                    )}
+                  </div>
+
                   {/* Big View profile · Book if services */}
                   {post.user_id !== session?.user?.id &&
                     !String(post.caption || "").startsWith("__anon__") && (
@@ -2581,7 +2669,22 @@ export default function Home() {
               <div ref={chatEndRef} />
             </div>
 
-            {/* In-chat Book strip — money path */}
+                        {currentChat?.girl_id && (
+              <button
+                type="button"
+                onClick={() =>
+                  setGiftSheet({
+                    userId: currentChat.girl_id,
+                    context: currentChat.girl?.username || "her",
+                  })
+                }
+                className="mx-4 mb-1 text-[12px] text-pink-400 font-semibold"
+              >
+                🎁 Send gift
+              </button>
+            )}
+
+{/* In-chat Book strip — money path */}
             {(showChatBook || chatServices.length > 0) && (
               <div className="px-3 py-2 border-t border-zinc-800 bg-zinc-950 shrink-0">
                 <div className="flex items-center justify-between mb-1.5">
@@ -3772,7 +3875,47 @@ export default function Home() {
         )}
       </main>
 
-      {/* BOTTOM NAV — Instagram style */}
+      
+        {/* Gift picker */}
+        {giftSheet && (
+          <div className="fixed inset-0 z-[80] bg-black/70 flex items-end sm:items-center justify-center">
+            <div className="w-full max-w-lg bg-zinc-950 border border-zinc-800 rounded-t-3xl sm:rounded-2xl p-4 pb-8">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-bold text-[16px]">Send a gift</h3>
+                <button
+                  type="button"
+                  onClick={() => setGiftSheet(null)}
+                  className="text-gray-400 text-sm"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="grid grid-cols-4 gap-2">
+                {GIFT_CATALOG.map((g) => (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => sendGift(giftSheet.userId, g, giftSheet.context)}
+                    className="flex flex-col items-center gap-1 bg-zinc-900 border border-zinc-800 rounded-xl py-3 px-1 active:scale-95"
+                  >
+                    <span className="text-2xl">{g.emoji}</span>
+                    <span className="text-[10px] text-gray-300 truncate w-full text-center">
+                      {g.name}
+                    </span>
+                    <span className="text-[10px] text-pink-400 font-semibold">
+                      ₦{g.price.toLocaleString()}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-gray-500 text-center mt-3">
+                Gift opens payment — complete transfer to send
+              </p>
+            </div>
+          </div>
+        )}
+
+{/* BOTTOM NAV — Instagram style */}
       {showBottomNav && (
         <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black border-t border-zinc-900 pb-[env(safe-area-inset-bottom)]">
           <div className="max-w-lg mx-auto flex items-center justify-around h-14">
