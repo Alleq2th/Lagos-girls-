@@ -200,7 +200,7 @@ export async function POST(req: NextRequest) {
       });
     }
     if (action === "add_likes" && body.postId) {
-      const n = Math.min(50, Math.max(1, Number(body.count) || 1));
+      const n = Math.min(200, Math.max(1, Number(body.count) || 1));
       const { data: girls } = await admin
         .from("profiles")
         .select("id")
