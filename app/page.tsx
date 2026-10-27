@@ -2146,10 +2146,10 @@ export default function Home() {
                     </p>
                   )}
 
-                  {/* View profile always · Book only if she has services */}
+                  {/* Big View profile · Book if services */}
                   {post.user_id !== session?.user?.id &&
                     !String(post.caption || "").startsWith("__anon__") && (
-                    <div className="px-3.5 mt-2 flex gap-2 flex-wrap items-center">
+                    <div className="px-3.5 mt-2.5 mb-1 flex flex-col gap-2">
                       {(() => {
                         let hasSvc = false;
                         try {
@@ -2158,42 +2158,31 @@ export default function Home() {
                             typeof raw === "string" ? JSON.parse(raw) : raw;
                           hasSvc = Array.isArray(list) && list.length > 0;
                         } catch {}
-                        return hasSvc ? (
+                        return (
                           <>
                             <button
-                              onClick={() => {
-                                if (!requirePremium("Become Premium to book services"))
-                                  return;
-                                requestService(post.user_id, {
-                                  name: "Video Call",
-                                  price: 15000,
-                                  desc: "From feed",
-                                });
-                              }}
-                              className="text-[12px] font-semibold bg-pink-600 px-3 py-1.5 rounded-full"
-                            >
-                              Book
-                            </button>
-                            <button
                               onClick={() => openUserProfile(post.user_id)}
-                              className="text-[12px] font-medium text-gray-300 px-2 py-1.5"
+                              className="w-full py-3 rounded-xl bg-pink-600 hover:bg-pink-500 active:scale-[0.98] text-white text-[15px] font-bold tracking-wide"
                             >
                               View profile
                             </button>
-                            <button
-                              onClick={() => openUserProfile(post.user_id)}
-                              className="text-[12px] font-medium text-gray-500 px-2 py-1.5"
-                            >
-                              Services
-                            </button>
+                            {hasSvc && (
+                              <button
+                                onClick={() => {
+                                  if (!requirePremium("Become Premium to book services"))
+                                    return;
+                                  requestService(post.user_id, {
+                                    name: "Video Call",
+                                    price: 15000,
+                                    desc: "From feed",
+                                  });
+                                }}
+                                className="w-full py-2.5 rounded-xl bg-zinc-800 border border-pink-500/40 text-pink-400 text-[14px] font-semibold"
+                              >
+                                Book a service
+                              </button>
+                            )}
                           </>
-                        ) : (
-                          <button
-                            onClick={() => openUserProfile(post.user_id)}
-                            className="text-[12px] font-semibold text-pink-500 px-2 py-1.5"
-                          >
-                            View profile
-                          </button>
                         );
                       })()}
                     </div>
@@ -2933,11 +2922,19 @@ export default function Home() {
               <p className="text-center text-gray-500 py-16">No saved posts</p>
             ) : (
               <div className="grid grid-cols-3 gap-1">
-                {savedPosts.map((p: any) => (
+                {savedPosts.map((p: any) => {
+                  const items = parsePrivateItems(p.media_url, p.media_type);
+                  const thumb = items[0];
+                  return (
                   <div key={p.id} className="aspect-square bg-zinc-900 overflow-hidden">
-                    <img src={p.media_url} className="w-full h-full object-cover" alt="" />
+                    {thumb?.type === "video" ? (
+                      <video src={thumb.url} className="w-full h-full object-cover" muted playsInline />
+                    ) : (
+                      <img src={thumb?.url || ""} className="w-full h-full object-cover" alt="" />
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -3392,28 +3389,39 @@ export default function Home() {
                             </p>
                           )}
                           {!isAnon && post.user_id !== session?.user?.id && (
-                            <div className="flex gap-2 flex-wrap pointer-events-auto">
+                            <div className="flex flex-col gap-2 pointer-events-auto w-full max-w-[220px]">
                               <button
                                 type="button"
                                 onClick={() => openUserProfile(post.user_id)}
-                                className="text-[12px] font-semibold bg-white/15 border border-white/30 px-3 py-1.5 rounded-full text-white"
+                                className="w-full py-3 rounded-xl bg-pink-600 text-white text-[15px] font-bold shadow-lg shadow-pink-900/40"
                               >
                                 View profile
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (!requirePremium("Become Premium to book services")) return;
-                                  requestService(post.user_id, {
-                                    name: "Video Call",
-                                    price: 15000,
-                                    desc: "From reels",
-                                  });
-                                }}
-                                className="text-[12px] font-semibold bg-pink-600 px-3 py-1.5 rounded-full text-white"
-                              >
-                                Book
-                              </button>
+                              {(() => {
+                                let hasSvc = false;
+                                try {
+                                  const raw = (post.profiles as any)?.services;
+                                  const list =
+                                    typeof raw === "string" ? JSON.parse(raw) : raw;
+                                  hasSvc = Array.isArray(list) && list.length > 0;
+                                } catch {}
+                                return hasSvc ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (!requirePremium("Become Premium to book services")) return;
+                                      requestService(post.user_id, {
+                                        name: "Video Call",
+                                        price: 15000,
+                                        desc: "From reels",
+                                      });
+                                    }}
+                                    className="w-full py-2.5 rounded-xl bg-white/15 border border-white/40 text-white text-[13px] font-semibold"
+                                  >
+                                    Book
+                                  </button>
+                                ) : null;
+                              })()}
                             </div>
                           )}
                         </div>
@@ -3717,19 +3725,32 @@ export default function Home() {
               </div>
             ) : (
               <div className="grid grid-cols-3 gap-[2px]">
-                {posts.map((p) => (
+                {posts.map((p) => {
+                  const items = parsePrivateItems(p.media_url, p.media_type);
+                  const thumb = items[0];
+                  const multi = items.length > 1;
+                  return (
                   <div
                     key={p.id}
-                    className="aspect-square bg-zinc-900 overflow-hidden cursor-pointer"
-                    onClick={() => setViewingPost(p)}
+                    className="relative aspect-square bg-zinc-900 overflow-hidden cursor-pointer"
+                    onClick={() =>
+                      setViewingPost({ ...p, _bundleItems: items })
+                    }
                   >
-                    {p.media_type === "video" ? (
-                      <video src={p.media_url} className="w-full h-full object-cover" muted playsInline />
+                    {thumb?.type === "video" ? (
+                      <video src={thumb.url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
                     ) : (
-                      <img src={p.media_url} className="w-full h-full object-cover" alt="" />
+                      <img src={thumb?.url || ""} className="w-full h-full object-cover" alt="" />
+                    )}
+                    {multi && (
+                      <span className="absolute top-1 right-1 text-[10px] bg-black/70 text-white px-1 rounded">⧉</span>
+                    )}
+                    {thumb?.type === "video" && (
+                      <span className="absolute bottom-1 left-1 text-[10px] bg-black/70 text-white px-1 rounded">▶</span>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
