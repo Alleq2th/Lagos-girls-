@@ -273,7 +273,7 @@ export default function Home() {
 
   async function loadFollowCounts(userId: string) {
     try {
-      const [followers, following] = await Promise.all([
+      const [followers, following, prof] = await Promise.all([
         supabase
           .from("follows")
           .select("*", { count: "exact", head: true })
@@ -282,8 +282,16 @@ export default function Home() {
           .from("follows")
           .select("*", { count: "exact", head: true })
           .eq("follower_id", userId),
+        supabase
+          .from("profiles")
+          .select("followers_count")
+          .eq("id", userId)
+          .maybeSingle(),
       ]);
-      setFollowerCount(followers.count || 0);
+      const real = followers.count || 0;
+      const boosted = Number((prof.data as any)?.followers_count) || 0;
+      // Admin-set followers_count wins when higher than real follows
+      setFollowerCount(Math.max(real, boosted));
       setFollowingCountProfile(following.count || 0);
     } catch {
       setFollowerCount(0);
@@ -723,12 +731,19 @@ export default function Home() {
         const myLikeSet = new Set((myLikesRes.data || []).map((r: any) => r.post_id));
         const mySaveSet = new Set((mySavesRes.data || []).map((r: any) => r.post_id));
 
-        const postsWithStats = data.map((post: any) => ({
-          ...post,
-          likes_count: countMap[post.id] || 0,
-          liked_by_me: myLikeSet.has(post.id),
-          saved_by_me: mySaveSet.has(post.id),
-        }));
+        const postsWithStats = data.map((post: any) => {
+          const real = countMap[post.id] || 0;
+          const boost = Number(post.likes_boost) || 0;
+          return {
+            ...post,
+            likes_count: real + boost,
+            liked_by_me: myLikeSet.has(post.id),
+            saved_by_me: mySaveSet.has(post.id),
+            comments_count:
+              (Number(post.comments_count) || 0) +
+              (Number(post.comments_boost) || 0),
+          };
+        });
         setPosts(smartFeedSort(postsWithStats));
       } else if (!feedLoadedRef.current) {
         setPosts([]);
