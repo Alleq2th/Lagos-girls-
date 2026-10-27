@@ -40,6 +40,8 @@ export default function AdminPage() {
   // Accounts
   const [accounts, setAccounts] = useState<any[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<any>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedPostIds, setSelectedPostIds] = useState<string[]>([]);
   const [accountSearch, setAccountSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<"ALL" | "GIRL" | "GUY">("ALL");
 
@@ -679,6 +681,66 @@ export default function AdminPage() {
     }
   }
 
+  
+  function toggleSelectId(id: string) {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  async function bulkSetFollowers() {
+    if (!selectedIds.length) return setMessage("Select accounts first");
+    const n = prompt("Set followers for " + selectedIds.length + " accounts:", "1000");
+    if (n == null) return;
+    const count = Math.max(0, Number(n) || 0);
+    setLoading(true);
+    for (const id of selectedIds) {
+      await adminEditStats("set_followers", { userId: id, count });
+      await supabase.from("profiles").update({ followers_count: count } as any).eq("id", id);
+    }
+    setMessage("Followers set to " + count + " for " + selectedIds.length + " accounts");
+    setLoading(false);
+    loadAccounts();
+  }
+
+  async function bulkApplyServices() {
+    if (!selectedIds.length) return setMessage("Select accounts first");
+    setLoading(true);
+    const payload = JSON.stringify(DEFAULT_SERVICES);
+    for (const id of selectedIds) {
+      await supabase.from("profiles").update({ services: payload }).eq("id", id);
+    }
+    setMessage("Default services applied to " + selectedIds.length);
+    setLoading(false);
+    loadAccounts();
+  }
+
+  async function bulkPremium(on: boolean) {
+    if (!selectedIds.length) return setMessage("Select accounts first");
+    setLoading(true);
+    for (const id of selectedIds) {
+      await supabase.from("profiles").update({ is_premium: on }).eq("id", id);
+    }
+    setMessage((on ? "Premium on" : "Premium off") + " for " + selectedIds.length);
+    setLoading(false);
+    loadAccounts();
+  }
+
+  async function bulkAddLikesToPosts() {
+    if (!selectedPostIds.length) return setMessage("Select posts first");
+    const n = prompt("Add how many likes to " + selectedPostIds.length + " posts?", "100");
+    if (n == null) return;
+    const count = Math.min(50000, Math.max(1, Number(n) || 1));
+    setLoading(true);
+    for (const postId of selectedPostIds) {
+      await adminEditStats("add_likes", { postId, count });
+    }
+    setMessage("Added likes to " + selectedPostIds.length + " posts");
+    setLoading(false);
+    setSelectedPostIds([]);
+    if (selectedAccount) loadAccountContent(selectedAccount.id);
+  }
+
   async function applyDefaultServices(acc: any) {
     const { error } = await supabase
       .from("profiles")
@@ -1173,6 +1235,13 @@ export default function AdminPage() {
           {/* Content lists */}
           <section className="mb-6">
             <h3 className="font-bold mb-2">Posts ({accountPosts.length})</h3>
+            {selectedPostIds.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2 items-center">
+                <span className="text-xs text-pink-400">{selectedPostIds.length} posts</span>
+                <button type="button" onClick={bulkAddLikesToPosts} className="text-[11px] px-2 py-1 rounded-lg bg-pink-700">+Likes all</button>
+                <button type="button" onClick={() => setSelectedPostIds([])} className="text-[11px] px-2 py-1 rounded-lg bg-zinc-700">Clear</button>
+              </div>
+            )}
             <div className="space-y-2">
               {accountPosts.map((p) => {
                 let thumb = p.media_url;
@@ -1193,6 +1262,18 @@ export default function AdminPage() {
                   key={p.id}
                   className="flex items-center gap-3 bg-zinc-900 rounded-xl p-2"
                 >
+                  <input
+                    type="checkbox"
+                    checked={selectedPostIds.includes(p.id)}
+                    onChange={() =>
+                      setSelectedPostIds((prev) =>
+                        prev.includes(p.id)
+                          ? prev.filter((x) => x !== p.id)
+                          : [...prev, p.id]
+                      )
+                    }
+                    className="w-4 h-4 shrink-0 accent-pink-500"
+                  />
                   <div className="w-12 h-12 bg-zinc-800 rounded overflow-hidden relative shrink-0">
                     {tType === "video" ? (
                       <video src={thumb} className="w-full h-full object-cover" />
@@ -1760,12 +1841,33 @@ export default function AdminPage() {
               </select>
             </div>
 
+            {selectedIds.length > 0 && (
+              <div className="mb-3 p-3 bg-pink-950/40 border border-pink-800/50 rounded-xl space-y-2">
+                <p className="text-xs text-pink-300 font-semibold">
+                  {selectedIds.length} selected
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={bulkSetFollowers} className="text-[11px] px-2 py-1 rounded-lg bg-zinc-800">Set followers</button>
+                  <button type="button" onClick={bulkApplyServices} className="text-[11px] px-2 py-1 rounded-lg bg-zinc-800">Default services</button>
+                  <button type="button" onClick={() => bulkPremium(true)} className="text-[11px] px-2 py-1 rounded-lg bg-yellow-800">Premium on</button>
+                  <button type="button" onClick={() => bulkPremium(false)} className="text-[11px] px-2 py-1 rounded-lg bg-zinc-800">Premium off</button>
+                  <button type="button" onClick={() => setSelectedIds([])} className="text-[11px] px-2 py-1 rounded-lg bg-zinc-700">Clear</button>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
               {filtered.map((acc) => (
                 <div
                   key={acc.id}
                   className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded-xl p-3"
                 >
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(acc.id)}
+                    onChange={() => toggleSelectId(acc.id)}
+                    className="w-4 h-4 shrink-0 accent-pink-500"
+                  />
                   <button
                     onClick={() => setSelectedAccount(acc)}
                     className="flex items-center gap-3 flex-1 min-w-0 text-left"
