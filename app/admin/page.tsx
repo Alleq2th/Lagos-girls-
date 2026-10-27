@@ -45,6 +45,7 @@ export default function AdminPage() {
 
   // Content
   const [accountPosts, setAccountPosts] = useState<any[]>([]);
+  const [postLikeCounts, setPostLikeCounts] = useState<Record<string, number>>({});
   const [accountPrivate, setAccountPrivate] = useState<any[]>([]);
   const [accountStories, setAccountStories] = useState<any[]>([]);
 
@@ -60,6 +61,7 @@ export default function AdminPage() {
   const [servicesJson, setServicesJson] = useState("");
   const [servicesMsg, setServicesMsg] = useState("");
   const [followerCount, setFollowerCount] = useState(0);
+  const [showServices, setShowServices] = useState(false);
   const [servicesList, setServicesList] = useState<{name:string;price:number;desc:string}[]>([]);
 
   // Settings
@@ -194,18 +196,34 @@ export default function AdminPage() {
       .select("*")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
-    const { data: privates } = await supabase
+    const list = posts || [];
+    setAccountPosts(list);
+    if (list.length) {
+      const ids = list.map((p: any) => p.id);
+      const { data: likes } = await supabase
+        .from("likes")
+        .select("post_id")
+        .in("post_id", ids);
+      const counts: Record<string, number> = {};
+      ids.forEach((id: string) => (counts[id] = 0));
+      (likes || []).forEach((l: any) => {
+        counts[l.post_id] = (counts[l.post_id] || 0) + 1;
+      });
+      setPostLikeCounts(counts);
+    } else {
+      setPostLikeCounts({});
+    }
+    const { data: priv } = await supabase
       .from("private_media")
       .select("*")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
+    setAccountPrivate(priv || []);
     const { data: stories } = await supabase
       .from("stories")
       .select("*")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
-    setAccountPosts(posts || []);
-    setAccountPrivate(privates || []);
     setAccountStories(stories || []);
   }
 
@@ -941,11 +959,11 @@ export default function AdminPage() {
             <p className="text-sm text-pink-400 mb-4 text-center">{message}</p>
           )}
 
-          {/* Followers */}
+          {/* Followers + compact Services */}
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 mb-4 flex items-center justify-between">
             <div>
               <p className="text-xs text-gray-400">Followers</p>
-              <p className="text-2xl font-bold text-pink-500">{followerCount}</p>
+              <p className="text-xl font-bold text-pink-500">{followerCount}</p>
             </div>
             <button
               onClick={() => {
@@ -957,90 +975,97 @@ export default function AdminPage() {
                 });
                 setFollowerCount(Number(n) || 0);
               }}
-              className="px-4 py-2 rounded-xl bg-zinc-800 text-sm font-semibold"
+              className="px-3 py-1.5 rounded-lg bg-zinc-800 text-xs font-semibold"
             >
               Edit
             </button>
           </div>
 
-          {/* Services — friendly editor (no JSON) */}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
-            <h3 className="font-bold mb-3">Services</h3>
-            <div className="space-y-3 mb-3">
-              {servicesList.map((s, i) => (
-                <div key={i} className="bg-zinc-800 rounded-xl p-3 space-y-2">
-                  <input
-                    value={s.name}
-                    onChange={(e) => {
-                      const next = [...servicesList];
-                      next[i] = { ...next[i], name: e.target.value };
-                      setServicesList(next);
-                    }}
-                    placeholder="Service name"
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                  />
-                  <input
-                    value={s.desc}
-                    onChange={(e) => {
-                      const next = [...servicesList];
-                      next[i] = { ...next[i], desc: e.target.value };
-                      setServicesList(next);
-                    }}
-                    placeholder="Description (optional)"
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                  />
-                  <div className="flex gap-2 items-center">
-                    <span className="text-gray-400 text-sm">₦</span>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl mb-6 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowServices((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 text-left"
+            >
+              <span className="font-semibold text-sm">
+                Services ({servicesList.length})
+              </span>
+              <span className="text-gray-400 text-xs">
+                {showServices ? "Hide ▲" : "Edit ▼"}
+              </span>
+            </button>
+            {showServices && (
+              <div className="px-4 pb-4 space-y-2 border-t border-zinc-800 pt-3">
+                {servicesList.map((s, i) => (
+                  <div
+                    key={i}
+                    className="flex flex-wrap items-center gap-2 bg-zinc-800 rounded-lg px-2 py-2"
+                  >
+                    <input
+                      value={s.name}
+                      onChange={(e) => {
+                        const next = [...servicesList];
+                        next[i] = { ...next[i], name: e.target.value };
+                        setServicesList(next);
+                      }}
+                      placeholder="Name"
+                      className="flex-1 min-w-[100px] bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs"
+                    />
                     <input
                       type="number"
                       value={s.price}
                       onChange={(e) => {
                         const next = [...servicesList];
-                        next[i] = { ...next[i], price: Number(e.target.value) || 0 };
+                        next[i] = {
+                          ...next[i],
+                          price: Number(e.target.value) || 0,
+                        };
                         setServicesList(next);
                       }}
-                      className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                      className="w-20 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs"
                     />
                     <button
                       type="button"
                       onClick={() =>
                         setServicesList(servicesList.filter((_, j) => j !== i))
                       }
-                      className="text-red-400 text-xs px-2"
+                      className="text-red-400 text-[11px]"
                     >
-                      Remove
+                      ✕
                     </button>
                   </div>
-                </div>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() =>
-                setServicesList([
-                  ...servicesList,
-                  { name: "", price: 5000, desc: "" },
-                ])
-              }
-              className="w-full mb-3 py-2 rounded-xl bg-zinc-800 text-sm font-semibold"
-            >
-              + Add service
-            </button>
-            {servicesMsg && (
-              <p
-                className={`text-sm mb-2 ${
-                  servicesMsg.startsWith("Error") ? "text-red-400" : "text-green-400"
-                }`}
-              >
-                {servicesMsg}
-              </p>
+                ))}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setServicesList([
+                      ...servicesList,
+                      { name: "New", price: 5000, desc: "" },
+                    ])
+                  }
+                  className="w-full py-1.5 rounded-lg bg-zinc-800 text-xs font-semibold"
+                >
+                  + Add
+                </button>
+                {servicesMsg && (
+                  <p
+                    className={`text-xs ${
+                      servicesMsg.startsWith("Error")
+                        ? "text-red-400"
+                        : "text-green-400"
+                    }`}
+                  >
+                    {servicesMsg}
+                  </p>
+                )}
+                <button
+                  onClick={saveServices}
+                  className="w-full bg-pink-600 py-2 rounded-xl text-sm font-semibold"
+                >
+                  Save Services
+                </button>
+              </div>
             )}
-            <button
-              onClick={saveServices}
-              className="w-full bg-pink-600 hover:bg-pink-500 py-2.5 rounded-xl text-sm font-semibold"
-            >
-              Save Services
-            </button>
           </div>
 
           {/* Post as account */}
@@ -1177,20 +1202,32 @@ export default function AdminPage() {
                       </span>
                     )}
                   </div>
-                  <p className="flex-1 text-xs text-gray-400 truncate">
-                    {multi > 1 ? `Carousel · ${multi} · ` : ""}
-                    {p.caption || "—"}
-                  </p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-gray-400 truncate">
+                      {multi > 1 ? `Carousel · ${multi} · ` : ""}
+                      {p.caption || "—"}
+                    </p>
+                    <p className="text-[11px] text-pink-400 mt-0.5">
+                      ♥ {postLikeCounts[p.id] ?? "…"} likes
+                    </p>
+                  </div>
                   <button
-                    onClick={() => {
-                      const n = prompt("How many likes to add?", "25");
+                    onClick={async () => {
+                      const n = prompt(
+                        "Likes now: " +
+                          (postLikeCounts[p.id] ?? 0) +
+                          ". How many to ADD?",
+                        "25"
+                      );
                       if (n == null) return;
-                      adminEditStats("add_likes", {
+                      await adminEditStats("add_likes", {
                         postId: p.id,
-                        count: Math.min(50, Math.max(1, Number(n) || 1)),
+                        count: Math.min(200, Math.max(1, Number(n) || 1)),
                       });
+                      if (selectedAccount)
+                        loadAccountContent(selectedAccount.id);
                     }}
-                    className="text-pink-400 text-xs"
+                    className="text-pink-400 text-xs font-semibold"
                   >
                     +Likes
                   </button>
