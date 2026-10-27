@@ -59,6 +59,8 @@ export default function AdminPage() {
   // Services
   const [servicesJson, setServicesJson] = useState("");
   const [servicesMsg, setServicesMsg] = useState("");
+  const [followerCount, setFollowerCount] = useState(0);
+  const [servicesList, setServicesList] = useState<{name:string;price:number;desc:string}[]>([]);
 
   // Settings
   const [paymentText, setPaymentText] = useState("");
@@ -126,16 +128,36 @@ export default function AdminPage() {
     if (selectedAccount) {
       loadAccountContent(selectedAccount.id);
       try {
-        const s = selectedAccount.services
-          ? typeof selectedAccount.services === "string"
-            ? selectedAccount.services
-            : JSON.stringify(selectedAccount.services, null, 2)
-          : JSON.stringify(DEFAULT_SERVICES, null, 2);
-        setServicesJson(s);
+        const raw = selectedAccount.services;
+        const list = raw
+          ? typeof raw === "string"
+            ? JSON.parse(raw)
+            : raw
+          : DEFAULT_SERVICES;
+        const arr = Array.isArray(list) ? list : DEFAULT_SERVICES;
+        setServicesList(
+          arr.map((x: any) => ({
+            name: String(x.name || ""),
+            price: Number(x.price) || 0,
+            desc: String(x.desc || ""),
+          }))
+        );
+        setServicesJson(JSON.stringify(arr, null, 2));
       } catch {
-        setServicesJson("[]");
+        setServicesList([...DEFAULT_SERVICES]);
+        setServicesJson(JSON.stringify(DEFAULT_SERVICES, null, 2));
       }
       setServicesMsg("");
+      (async () => {
+        const { count } = await supabase
+          .from("follows")
+          .select("*", { count: "exact", head: true })
+          .eq("following_id", selectedAccount.id);
+        const display = (selectedAccount as any).followers_count;
+        setFollowerCount(
+          typeof display === "number" && display > 0 ? display : count || 0
+        );
+      })();
     }
   }, [selectedAccount]);
 
@@ -456,18 +478,30 @@ export default function AdminPage() {
   }
 
   async function saveServices() {
+    if (!selectedAccount) return;
+    setServicesMsg("");
     try {
-      const parsed = JSON.parse(servicesJson);
+      const cleaned = servicesList
+        .filter((s) => s.name.trim())
+        .map((s) => ({
+          name: s.name.trim(),
+          price: Number(s.price) || 0,
+          desc: (s.desc || "").trim(),
+        }));
       const { error } = await supabase
         .from("profiles")
-        .update({ services: JSON.stringify(parsed) })
+        .update({ services: JSON.stringify(cleaned) })
         .eq("id", selectedAccount.id);
       if (error) throw error;
-      setSelectedAccount({ ...selectedAccount, services: JSON.stringify(parsed) });
-      setServicesMsg("Saved");
+      setServicesMsg("Services saved");
+      setSelectedAccount({
+        ...selectedAccount,
+        services: JSON.stringify(cleaned),
+      });
+      setServicesList(cleaned);
       loadAccounts();
     } catch (e: any) {
-      setServicesMsg("Error: " + (e.message || "invalid JSON"));
+      setServicesMsg("Error: " + (e.message || "save failed"));
     }
   }
 
@@ -870,7 +904,7 @@ export default function AdminPage() {
               disabled={loading}
               className="py-2.5 rounded-xl text-sm font-semibold bg-pink-600 col-span-2 disabled:opacity-50"
             >
-              Fix login (username + FakePass123!)
+              Fix login
             </button>
             <button
               onClick={() =>
@@ -907,15 +941,91 @@ export default function AdminPage() {
             <p className="text-sm text-pink-400 mb-4 text-center">{message}</p>
           )}
 
-          {/* Services */}
+          {/* Followers */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 mb-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-gray-400">Followers</p>
+              <p className="text-2xl font-bold text-pink-500">{followerCount}</p>
+            </div>
+            <button
+              onClick={() => {
+                const n = prompt("Set followers to:", String(followerCount || 1000));
+                if (n == null) return;
+                adminEditStats("set_followers", {
+                  userId: selectedAccount.id,
+                  count: Number(n),
+                });
+                setFollowerCount(Number(n) || 0);
+              }}
+              className="px-4 py-2 rounded-xl bg-zinc-800 text-sm font-semibold"
+            >
+              Edit
+            </button>
+          </div>
+
+          {/* Services — friendly editor (no JSON) */}
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
-            <h3 className="font-bold mb-2">Services</h3>
-            <textarea
-              value={servicesJson}
-              onChange={(e) => setServicesJson(e.target.value)}
-              rows={8}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono resize-y mb-3"
-            />
+            <h3 className="font-bold mb-3">Services</h3>
+            <div className="space-y-3 mb-3">
+              {servicesList.map((s, i) => (
+                <div key={i} className="bg-zinc-800 rounded-xl p-3 space-y-2">
+                  <input
+                    value={s.name}
+                    onChange={(e) => {
+                      const next = [...servicesList];
+                      next[i] = { ...next[i], name: e.target.value };
+                      setServicesList(next);
+                    }}
+                    placeholder="Service name"
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                  />
+                  <input
+                    value={s.desc}
+                    onChange={(e) => {
+                      const next = [...servicesList];
+                      next[i] = { ...next[i], desc: e.target.value };
+                      setServicesList(next);
+                    }}
+                    placeholder="Description (optional)"
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                  />
+                  <div className="flex gap-2 items-center">
+                    <span className="text-gray-400 text-sm">₦</span>
+                    <input
+                      type="number"
+                      value={s.price}
+                      onChange={(e) => {
+                        const next = [...servicesList];
+                        next[i] = { ...next[i], price: Number(e.target.value) || 0 };
+                        setServicesList(next);
+                      }}
+                      className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setServicesList(servicesList.filter((_, j) => j !== i))
+                      }
+                      className="text-red-400 text-xs px-2"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setServicesList([
+                  ...servicesList,
+                  { name: "", price: 5000, desc: "" },
+                ])
+              }
+              className="w-full mb-3 py-2 rounded-xl bg-zinc-800 text-sm font-semibold"
+            >
+              + Add service
+            </button>
             {servicesMsg && (
               <p
                 className={`text-sm mb-2 ${
@@ -1072,9 +1182,14 @@ export default function AdminPage() {
                     {p.caption || "—"}
                   </p>
                   <button
-                    onClick={() =>
-                      adminEditStats("add_likes", { postId: p.id, count: 10 })
-                    }
+                    onClick={() => {
+                      const n = prompt("How many likes to add?", "25");
+                      if (n == null) return;
+                      adminEditStats("add_likes", {
+                        postId: p.id,
+                        count: Math.min(50, Math.max(1, Number(n) || 1)),
+                      });
+                    }}
                     className="text-pink-400 text-xs"
                   >
                     +Likes
