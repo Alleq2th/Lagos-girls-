@@ -182,10 +182,18 @@ export async function POST(req: NextRequest) {
     // ——— EDIT STATS ———
     if (action === "clear_likes" && body.postId) {
       await admin.from("likes").delete().eq("post_id", body.postId);
+      await admin
+        .from("posts")
+        .update({ likes_boost: 0 } as any)
+        .eq("id", body.postId);
       return NextResponse.json({ ok: true, message: "Likes cleared" });
     }
     if (action === "clear_comments" && body.postId) {
       await admin.from("comments").delete().eq("post_id", body.postId);
+      await admin
+        .from("posts")
+        .update({ comments_boost: 0 } as any)
+        .eq("id", body.postId);
       return NextResponse.json({ ok: true, message: "Comments cleared" });
     }
     if (action === "set_followers" && body.userId) {
@@ -200,23 +208,78 @@ export async function POST(req: NextRequest) {
       });
     }
     if (action === "add_likes" && body.postId) {
-      const n = Math.min(200, Math.max(1, Number(body.count) || 1));
-      const { data: girls } = await admin
+      const n = Math.min(50000, Math.max(1, Number(body.count) || 1));
+      // Fill real likes from any profiles (one like per user max)
+      const { data: people } = await admin
         .from("profiles")
         .select("id")
-        .eq("role", "GIRL")
-        .limit(n);
-      const rows = (girls || []).map((g: { id: string }) => ({
+        .limit(200);
+      const rows = (people || []).map((g: { id: string }) => ({
         post_id: body.postId,
         user_id: g.id,
       }));
       if (rows.length) {
         await admin.from("likes").upsert(rows, { onConflict: "post_id,user_id" });
       }
+      // Extra display likes via likes_boost (survives beyond profile count)
+      const { data: postRow } = await admin
+        .from("posts")
+        .select("likes_boost")
+        .eq("id", body.postId)
+        .maybeSingle();
+      const prev = Number((postRow as any)?.likes_boost) || 0;
+      const { count: real } = await admin
+        .from("likes")
+        .select("*", { count: "exact", head: true })
+        .eq("post_id", body.postId);
+      const realN = real || 0;
+      // Ensure displayed total increases by n
+      const currentDisplay = realN + prev;
+      const desired = currentDisplay + n;
+      const newBoost = Math.max(0, desired - realN);
+      await admin
+        .from("posts")
+        .update({ likes_boost: newBoost } as any)
+        .eq("id", body.postId);
       return NextResponse.json({
         ok: true,
-        message: "Added up to " + rows.length + " likes",
+        message: `Likes now ~${desired} (real ${realN} + boost ${newBoost})`,
       });
+    }
+    if (action === "add_comments" && body.postId) {
+      const n = Math.min(50000, Math.max(1, Number(body.count) || 1));
+      const samples = [
+        "🔥🔥🔥",
+        "body on god",
+        "link in bio?",
+        "how much for video call",
+        "you fine die",
+        "lagos girls 🔥",
+        "booked 💯",
+        "send rates",
+        "this one fine",
+        "😩😩",
+      ];
+      const { data: people } = await admin.from("profiles").select("id").limit(50);
+      const ids = (people || []).map((p: { id: string }) => p.id);
+      for (let i = 0; i < Math.min(n, ids.length); i++) {
+        await admin.from("comments").insert({
+          post_id: body.postId,
+          user_id: ids[i % ids.length],
+          content: samples[i % samples.length],
+        } as any);
+      }
+      const { data: postRow } = await admin
+        .from("posts")
+        .select("comments_boost")
+        .eq("id", body.postId)
+        .maybeSingle();
+      const prev = Number((postRow as any)?.comments_boost) || 0;
+      await admin
+        .from("posts")
+        .update({ comments_boost: prev + Math.max(0, n - ids.length) } as any)
+        .eq("id", body.postId);
+      return NextResponse.json({ ok: true, message: "Comments added" });
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
