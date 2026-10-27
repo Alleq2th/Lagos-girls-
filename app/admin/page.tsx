@@ -209,6 +209,9 @@ export default function AdminPage() {
       (likes || []).forEach((l: any) => {
         counts[l.post_id] = (counts[l.post_id] || 0) + 1;
       });
+      list.forEach((p: any) => {
+        counts[p.id] = (counts[p.id] || 0) + (Number(p.likes_boost) || 0);
+      });
       setPostLikeCounts(counts);
     } else {
       setPostLikeCounts({});
@@ -1217,12 +1220,12 @@ export default function AdminPage() {
                         "Likes now: " +
                           (postLikeCounts[p.id] ?? 0) +
                           ". How many to ADD?",
-                        "25"
+                        "100"
                       );
                       if (n == null) return;
                       await adminEditStats("add_likes", {
                         postId: p.id,
-                        count: Math.min(200, Math.max(1, Number(n) || 1)),
+                        count: Math.min(50000, Math.max(1, Number(n) || 1)),
                       });
                       if (selectedAccount)
                         loadAccountContent(selectedAccount.id);
@@ -1230,6 +1233,21 @@ export default function AdminPage() {
                     className="text-pink-400 text-xs font-semibold"
                   >
                     +Likes
+                  </button>
+                  <button
+                    onClick={async () => {
+                      const n = prompt("How many comments to ADD?", "12");
+                      if (n == null) return;
+                      await adminEditStats("add_comments", {
+                        postId: p.id,
+                        count: Math.min(50000, Math.max(1, Number(n) || 1)),
+                      });
+                      if (selectedAccount)
+                        loadAccountContent(selectedAccount.id);
+                    }}
+                    className="text-sky-400 text-xs font-semibold"
+                  >
+                    +Comments
                   </button>
                   <button
                     onClick={() =>
