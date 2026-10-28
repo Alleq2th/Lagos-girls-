@@ -49,6 +49,37 @@ function resolvePaymentLink(
   return LINK_SERVICES;
 }
 
+
+const DEFAULT_EVENTS = [
+  {
+    id: "evt-vip",
+    title: "VIP Private Night",
+    teaser: "Very limited. Invite-only energy.",
+    price: 150000,
+    seats_left: 4,
+    seats_total: 12,
+    emoji: "🔥",
+  },
+  {
+    id: "evt-orgy",
+    title: "Exclusive Group Night",
+    teaser: "Only a few seats. Once full, it closes.",
+    price: 100000,
+    seats_left: 7,
+    seats_total: 20,
+    emoji: "💋",
+  },
+  {
+    id: "evt-couples",
+    title: "Couples Only Session",
+    teaser: "Curated. No walk-ins. High demand.",
+    price: 200000,
+    seats_left: 2,
+    seats_total: 8,
+    emoji: "✨",
+  },
+];
+
 export default function Home() {
   const [session, setSession] = useState<any>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -69,6 +100,9 @@ export default function Home() {
   >("age");
   const [posts, setPosts] = useState<any[]>([]);
   const [stories, setStories] = useState<any[]>([]);
+  const [appEvents, setAppEvents] = useState(DEFAULT_EVENTS);
+  const [eventSlide, setEventSlide] = useState(0);
+  const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
   const [userPosts, setUserPosts] = useState<Post[]>([]);
   const [userPrivate, setUserPrivate] = useState<PrivateMedia[]>([]);
@@ -485,6 +519,15 @@ export default function Home() {
     setPaySubmitting(false);
   }
 
+  
+  useEffect(() => {
+    if (!appEvents.length) return;
+    const tmr = setInterval(() => {
+      setEventSlide((i) => (i + 1) % appEvents.length);
+    }, 4000);
+    return () => clearInterval(tmr);
+  }, [appEvents.length]);
+
   function markStorySeen(userId: string) {
     if (!userId) return;
     setSeenStoryUsers((prev) => {
@@ -519,6 +562,8 @@ export default function Home() {
   const [giftSheet, setGiftSheet] = useState<{
     userId: string;
     context?: string;
+    displayName?: string;
+    avatarUrl?: string;
   } | null>(null);
   const [username, setUsername] = useState("");
   const [role, setRole] = useState<"GUY" | "GIRL">("GUY");
@@ -1120,16 +1165,29 @@ export default function Home() {
   async function sendGift(
     girlId: string,
     gift: { id: string; name: string; emoji: string; price: number },
-    context?: string
+    context?: string,
+    prefill?: { displayName?: string; avatarUrl?: string }
   ) {
     if (!session || !profile) return;
+    let girlName = prefill?.displayName || context || "";
+    let girlAvatar = prefill?.avatarUrl || "";
+    if (!girlAvatar || !girlName) {
+      try {
+        const { data: g } = await supabase
+          .from("profiles")
+          .select("username, display_name, avatar_url")
+          .eq("id", girlId)
+          .maybeSingle();
+        girlName = g?.display_name || g?.username || girlName || "";
+        girlAvatar = g?.avatar_url || girlAvatar || "";
+      } catch {}
+    }
     openPaySheet(
       gift.emoji + " " + gift.name,
       gift.price,
       "Send screenshot of ₦" + gift.price.toLocaleString() + " for this gift",
-      { kind: "gift", girlName: context || "" }
+      { kind: "gift", girlName, girlAvatar }
     );
-    // Log gift intent in chat if possible
     try {
       if (profile.is_premium) {
         const text =
@@ -1169,11 +1227,11 @@ async function requestService(
         .select("username, display_name, avatar_url")
         .eq("id", girlId)
         .maybeSingle();
-      girlName = g?.username || g?.display_name || "";
+      girlName = g?.display_name || g?.username || "";
       girlAvatar = g?.avatar_url || "";
     } catch {}
     openPaySheet(
-      `${girlName ? girlName + " · " : ""}${service.name}`,
+      service.name,
       Number(service.price),
       `Send screenshot of ₦${Number(service.price).toLocaleString()} payment for ${service.name}`,
       { kind: "service", girlName, girlAvatar }
@@ -1994,57 +2052,79 @@ async function requestService(
         {/* ========== FEED ========== */}
         {view === "feed" && (
           <div>
-            {/* Stories Row - Instagram style */}
-            <div className="flex gap-3.5 overflow-x-auto px-3 py-3 border-b border-zinc-900/80 scrollbar-hide">
-              <div
-                className="flex flex-col items-center gap-1.5 min-w-[72px] cursor-pointer"
-                onClick={() => { setIsStory(true); setView("create"); }}
-              >
-                <div className="relative">
-                  <div className="w-[68px] h-[68px] rounded-full border-2 border-dashed border-pink-500/80 flex items-center justify-center bg-zinc-900">
-                    <span className="text-2xl text-pink-500 font-light">+</span>
-                  </div>
-                </div>
-                <span className="text-[11px] text-gray-400 font-medium">Your Story</span>
+            {/* Events strip — FOMO, auto-swipe */}
+            <div className="px-3 py-3 border-b border-zinc-900/80">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[12px] font-semibold text-pink-400 tracking-wide uppercase">
+                  Exclusive events
+                </p>
+                <p className="text-[10px] text-gray-500">Swipe · limited seats</p>
               </div>
-              {stories.map((story) => {
-                const seen = seenStoryUsers.includes(story.user_id);
-                return (
-                  <div
-                    key={story.id}
-                    className="flex flex-col items-center gap-1.5 min-w-[72px] cursor-pointer active:opacity-70"
-                    onClick={() => {
-                      setActiveStory(story);
-                      markStorySeen(story.user_id);
-                    }}
+              <div
+                className="flex gap-3 overflow-x-auto snap-x snap-mandatory scrollbar-hide pb-1"
+                style={{ scrollSnapType: "x mandatory" }}
+                ref={(el) => {
+                  if (!el || !appEvents.length) return;
+                  const w = el.clientWidth;
+                  el.scrollTo({ left: eventSlide * (w * 0.85 + 12), behavior: "smooth" });
+                }}
+              >
+                {appEvents.map((ev, idx) => (
+                  <button
+                    key={ev.id}
+                    type="button"
+                    onClick={() => setSelectedEvent(ev)}
+                    className="snap-start shrink-0 w-[85%] text-left rounded-2xl border border-pink-500/40 bg-gradient-to-br from-zinc-900 via-zinc-950 to-black p-4 active:scale-[0.98] transition"
                   >
-                    <div
-                      className={`w-[68px] h-[68px] rounded-full p-[2.5px] ${
-                        seen
-                          ? "bg-zinc-600"
-                          : "bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600"
-                      }`}
-                    >
-                      <div className="w-full h-full rounded-full bg-black p-[2px] overflow-hidden">
-                        {story.profiles?.avatar_url ? (
-                          <img
-                            src={story.profiles.avatar_url}
-                            className="w-full h-full object-cover rounded-full"
-                            alt=""
-                          />
-                        ) : (
-                          <div className="w-full h-full rounded-full bg-zinc-800 flex items-center justify-center text-sm font-semibold">
-                            {story.profiles?.username?.[0]?.toUpperCase() || "?"}
-                          </div>
-                        )}
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-[20px] mb-1">{ev.emoji}</p>
+                        <h3 className="text-[16px] font-bold text-white leading-tight">
+                          {ev.title}
+                        </h3>
+                        <p className="text-[12px] text-gray-400 mt-1">{ev.teaser}</p>
                       </div>
+                      <span className="text-[10px] font-bold bg-pink-600/90 text-white px-2 py-1 rounded-full shrink-0">
+                        {ev.seats_left} left
+                      </span>
                     </div>
-                    <span className="text-[11px] text-gray-300 truncate w-[68px] text-center font-medium">
-                      {story.profiles?.username}
-                    </span>
-                  </div>
-                );
-              })}
+                    <div className="flex items-center justify-between mt-3">
+                      <p className="text-pink-400 font-bold text-[15px]">
+                        ₦{Number(ev.price).toLocaleString()}
+                      </p>
+                      <span className="text-[11px] text-gray-500">
+                        {ev.seats_total} seats total
+                      </span>
+                    </div>
+                    <div className="mt-2 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-pink-500 rounded-full"
+                        style={{
+                          width: `${Math.max(
+                            8,
+                            Math.round(
+                              ((ev.seats_total - ev.seats_left) / Math.max(ev.seats_total, 1)) *
+                                100
+                            )
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <div className="flex justify-center gap-1.5 mt-2">
+                {appEvents.map((ev, i) => (
+                  <button
+                    key={ev.id}
+                    type="button"
+                    onClick={() => setEventSlide(i)}
+                    className={`h-1.5 rounded-full transition-all ${
+                      i === eventSlide ? "w-4 bg-pink-500" : "w-1.5 bg-zinc-600"
+                    }`}
+                  />
+                ))}
+              </div>
             </div>
 
             {/* Active Story Viewer - more controlled size */}
@@ -2350,7 +2430,15 @@ async function requestService(
                         onClick={() =>
                           setGiftSheet({
                             userId: post.user_id,
-                            context: post.profiles?.username || "girl",
+                            context:
+                              post.profiles?.display_name ||
+                              post.profiles?.username ||
+                              "girl",
+                            displayName:
+                              post.profiles?.display_name ||
+                              post.profiles?.username ||
+                              "",
+                            avatarUrl: post.profiles?.avatar_url || "",
                           })
                         }
                         className="text-[12px] text-pink-400 font-semibold"
@@ -2786,7 +2874,15 @@ async function requestService(
                 onClick={() =>
                   setGiftSheet({
                     userId: currentChat.girl_id,
-                    context: currentChat.girl?.username || "her",
+                    context:
+                      currentChat.girl?.display_name ||
+                      currentChat.girl?.username ||
+                      "her",
+                    displayName:
+                      currentChat.girl?.display_name ||
+                      currentChat.girl?.username ||
+                      "",
+                    avatarUrl: currentChat.girl?.avatar_url || "",
                   })
                 }
                 className="mx-4 mb-1 text-[12px] text-pink-400 font-semibold"
@@ -3804,7 +3900,54 @@ async function requestService(
           </div>
         )}
 
-        {/* Payment sheet — Flutterwave + screenshot */}
+        
+        {/* Event FOMO detail */}
+        {selectedEvent && (
+          <div className="fixed inset-0 z-[80] bg-black/90 flex items-end sm:items-center justify-center p-3">
+            <div className="w-full max-w-sm bg-zinc-950 border border-pink-500/40 rounded-2xl p-5">
+              <p className="text-[28px] mb-1">{selectedEvent.emoji}</p>
+              <h3 className="text-[20px] font-bold mb-1">{selectedEvent.title}</h3>
+              <p className="text-[13px] text-gray-400 mb-3">{selectedEvent.teaser}</p>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 mb-3">
+                <p className="text-[12px] text-gray-500">Entry</p>
+                <p className="text-pink-400 font-bold text-[24px]">
+                  ₦{Number(selectedEvent.price).toLocaleString()}
+                </p>
+                <p className="text-[13px] text-orange-400 font-semibold mt-1">
+                  Only {selectedEvent.seats_left} seats left
+                </p>
+              </div>
+              <p className="text-[12px] text-gray-500 mb-4">
+                No public location. Details after payment is confirmed.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  const ev = selectedEvent;
+                  setSelectedEvent(null);
+                  openPaySheet(
+                    ev.title,
+                    Number(ev.price),
+                    "Event seat — send screenshot of exact payment",
+                    { kind: "service", girlName: "Event" }
+                  );
+                }}
+                className="w-full bg-pink-600 py-3.5 rounded-xl font-bold text-[15px] mb-2"
+              >
+                Claim a seat
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedEvent(null)}
+                className="w-full bg-zinc-800 py-3 rounded-xl text-[14px] text-gray-300"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+
+{/* Payment sheet — Flutterwave + screenshot */}
         {paySheet && (
           <div className="fixed inset-0 z-[80] bg-black/90 flex items-end sm:items-center justify-center p-3">
             <div className="w-full max-w-sm bg-zinc-950 border border-zinc-700 rounded-2xl p-5 max-h-[92vh] overflow-y-auto">
@@ -3813,12 +3956,16 @@ async function requestService(
                 {paySheet.girlAvatar ? (
                   <img
                     src={paySheet.girlAvatar}
-                    className="w-14 h-14 rounded-full object-cover ring-2 ring-pink-500/50"
+                    className="w-16 h-16 rounded-full object-cover ring-2 ring-pink-500/60 shrink-0"
                     alt=""
                   />
                 ) : (
-                  <div className="w-14 h-14 rounded-full bg-zinc-800 flex items-center justify-center text-xl">
-                    {paySheet.kind === "gift" ? "🎁" : paySheet.kind === "premium" ? "★" : "💳"}
+                  <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center text-2xl shrink-0">
+                    {paySheet.kind === "gift"
+                      ? "🎁"
+                      : paySheet.kind === "premium"
+                      ? "★"
+                      : "💳"}
                   </div>
                 )}
                 <div className="min-w-0">
@@ -3831,11 +3978,19 @@ async function requestService(
                       ? "Gift"
                       : "Premium"}
                   </p>
-                  <h3 className="text-[16px] font-bold truncate">{paySheet.title}</h3>
-                  {paySheet.girlName && (
-                    <p className="text-[13px] text-pink-400 truncate">
-                      for @{paySheet.girlName}
-                    </p>
+                  {paySheet.girlName ? (
+                    <>
+                      <h3 className="text-[17px] font-bold truncate text-white">
+                        {paySheet.girlName}
+                      </h3>
+                      <p className="text-[13px] text-pink-400 truncate">
+                        {paySheet.title}
+                      </p>
+                    </>
+                  ) : (
+                    <h3 className="text-[16px] font-bold truncate">
+                      {paySheet.title}
+                    </h3>
                   )}
                 </div>
               </div>
@@ -4159,7 +4314,12 @@ async function requestService(
                   <button
                     key={g.id}
                     type="button"
-                    onClick={() => sendGift(giftSheet.userId, g, giftSheet.context)}
+                    onClick={() =>
+                      sendGift(giftSheet.userId, g, giftSheet.context, {
+                        displayName: giftSheet.displayName,
+                        avatarUrl: giftSheet.avatarUrl,
+                      })
+                    }
                     className="flex flex-col items-center gap-1 bg-zinc-900 border border-zinc-800 rounded-xl py-3 px-1 active:scale-95"
                   >
                     <span className="text-2xl">{g.emoji}</span>
