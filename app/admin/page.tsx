@@ -840,14 +840,19 @@ export default function AdminPage() {
         .limit(50);
       if (!error && data) {
         setPendingUnlocks(
-          data.map((r: any) => ({
-            id: r.id,
-            label: r.label,
-            note: r.note,
-            media_id: r.media_id,
-            user_id: r.user_id,
-            at: r.created_at,
-          }))
+          data.map((r: any) => {
+            const note = String(r.note || "");
+            const m = note.match(/screenshot:(https?:\/\/\S+)/i);
+            return {
+              id: r.id,
+              label: r.label,
+              note,
+              media_id: r.media_id,
+              user_id: r.user_id,
+              at: r.created_at,
+              screenshot: m ? m[1] : null,
+            };
+          })
         );
         return;
       }
@@ -870,11 +875,18 @@ export default function AdminPage() {
         return;
       }
     }
+    // Premium payments → set is_premium
+    if (u.user_id && /premium/i.test(String(u.label || ""))) {
+      await supabase
+        .from("profiles")
+        .update({ is_premium: true })
+        .eq("id", u.user_id);
+    }
     if (typeof u.id === "string" && u.id.length > 15) {
       await supabase.from("unlock_requests").update({ status: "approved" }).eq("id", u.id);
     }
     setPendingUnlocks((prev) => prev.filter((x) => x.id !== u.id));
-    setMessage("Unlock approved — user can see content after refresh");
+    setMessage("Approved");
   }
 
   function removeUnlock(id: string) {
@@ -1695,25 +1707,38 @@ export default function AdminPage() {
                 {pendingUnlocks.map((u) => (
                   <div
                     key={u.id}
-                    className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 flex justify-between items-center gap-2"
+                    className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 space-y-2"
                   >
-                    <div className="min-w-0">
-                      <p className="text-sm truncate">{u.label || u.id}</p>
-                      <p className="text-xs text-gray-500 truncate">{u.note}</p>
-                      {u.user_id && (
-                        <p className="text-[10px] text-gray-600 truncate">user: {u.user_id}</p>
+                    <div className="flex gap-3">
+                      {u.screenshot && (
+                        <a href={u.screenshot} target="_blank" rel="noreferrer">
+                          <img
+                            src={u.screenshot}
+                            alt="Proof"
+                            className="w-20 h-20 object-cover rounded-lg border border-zinc-700"
+                          />
+                        </a>
                       )}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium">{u.label || u.id}</p>
+                        <p className="text-xs text-gray-500 break-all">{u.note}</p>
+                        {u.user_id && (
+                          <p className="text-[10px] text-gray-600 truncate">
+                            user: {u.user_id}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex flex-col gap-1 shrink-0">
+                    <div className="flex gap-2">
                       <button
                         onClick={() => approveUnlock(u)}
-                        className="text-xs bg-green-700 px-3 py-1.5 rounded-lg"
+                        className="flex-1 text-xs bg-green-700 py-2 rounded-lg font-semibold"
                       >
-                        Approve unlock
+                        Approve
                       </button>
                       <button
                         onClick={() => removeUnlock(u.id)}
-                        className="text-xs bg-zinc-800 px-3 py-1.5 rounded-lg text-gray-400"
+                        className="text-xs bg-zinc-800 px-3 py-2 rounded-lg text-gray-400"
                       >
                         Dismiss
                       </button>
