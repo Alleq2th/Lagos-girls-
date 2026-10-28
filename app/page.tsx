@@ -94,7 +94,18 @@ export default function Home() {
   const [pendingChatMessage, setPendingChatMessage] = useState<string | null>(null);
   const lastTapRef = useRef<{ id: string; t: number } | null>(null);
   const [reelPaused, setReelPaused] = useState<Record<string, boolean>>({});
-  const [paySheet, setPaySheet] = useState<null | { title: string; amount?: number; note?: string }>(null);
+  const [paySheet, setPaySheet] = useState<null | {
+    title: string;
+    amount?: number;
+    note?: string;
+    kind?: "premium" | "service" | "private" | "gift";
+    girlName?: string;
+    girlAvatar?: string;
+    mediaId?: string;
+  }>(null);
+  const [payProof, setPayProof] = useState<File | null>(null);
+  const [payProofPreview, setPayProofPreview] = useState("");
+  const [paySubmitting, setPaySubmitting] = useState(false);
   const [unlockTarget, setUnlockTarget] = useState<any | null>(null);
   const [unlockedIds, setUnlockedIds] = useState<string[]>([]);
   const [readMap, setReadMap] = useState<Record<string, string>>({});
@@ -341,22 +352,86 @@ export default function Home() {
     return false;
   }
 
-  function openPaySheet(title: string, amount?: number, note?: string) {
-    setPaySheet({ title, amount, note });
+  function openPaySheet(
+    title: string,
+    amount?: number,
+    note?: string,
+    extra?: {
+      kind?: "premium" | "service" | "private" | "gift";
+      girlName?: string;
+      girlAvatar?: string;
+      mediaId?: string;
+    }
+  ) {
+    setPayProof(null);
+    setPayProofPreview("");
+    setPaySheet({
+      title,
+      amount,
+      note,
+      kind: extra?.kind || "premium",
+      girlName: extra?.girlName,
+      girlAvatar: extra?.girlAvatar,
+      mediaId: extra?.mediaId,
+    });
+  }
+
+  async function uploadPayProof(file: File): Promise<string | null> {
+    try {
+      const ext = file.name.split(".").pop() || "jpg";
+      const path = `payment-proofs/${session?.user?.id || "anon"}-${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from("media").upload(path, file, {
+        upsert: true,
+        contentType: file.type || "image/jpeg",
+      });
+      if (error) {
+        // fallback public bucket name
+        const { error: e2 } = await supabase.storage.from("posts").upload(path, file, {
+          upsert: true,
+          contentType: file.type || "image/jpeg",
+        });
+        if (e2) {
+          console.warn("proof upload", error.message, e2.message);
+          return null;
+        }
+        const { data } = supabase.storage.from("posts").getPublicUrl(path);
+        return data.publicUrl;
+      }
+      const { data } = supabase.storage.from("media").getPublicUrl(path);
+      return data.publicUrl;
+    } catch (e) {
+      console.warn(e);
+      return null;
+    }
   }
 
   async function submitPaidRequest(label: string, note?: string, mediaId?: string) {
+    setPaySubmitting(true);
+    let proofUrl = "";
+    if (payProof) {
+      proofUrl = (await uploadPayProof(payProof)) || "";
+    }
+    const fullNote = [
+      note || "",
+      proofUrl ? `screenshot:${proofUrl}` : "screenshot:none",
+      paySheet?.girlName ? `for:${paySheet.girlName}` : "",
+      paySheet?.kind ? `kind:${paySheet.kind}` : "",
+    ]
+      .filter(Boolean)
+      .join(" | ");
+
     // Local queue for admin browser fallback
     try {
       const list = JSON.parse(localStorage.getItem(UNLOCKS_KEY) || "[]");
       list.unshift({
         id: Date.now().toString(),
         label,
-        note: note || "",
+        note: fullNote,
         at: new Date().toISOString(),
         user: profile?.username || session?.user?.id,
-        media_id: mediaId,
+        media_id: mediaId || paySheet?.mediaId,
         conversation_id: currentChat?.id || null,
+        screenshot: proofUrl,
       });
       localStorage.setItem(UNLOCKS_KEY, JSON.stringify(list.slice(0, 100)));
     } catch {}
@@ -366,11 +441,11 @@ export default function Home() {
       try {
         await supabase.from("unlock_requests").insert({
           user_id: session.user.id,
-          media_id: mediaId || null,
+          media_id: mediaId || paySheet?.mediaId || null,
           label,
-          note: note || "",
+          note: fullNote,
           status: "pending",
-        });
+        } as any);
       } catch {}
     }
 
@@ -403,6 +478,9 @@ export default function Home() {
     setPaySheet(null);
     setUnlockTarget(null);
     setShowChatBook(false);
+    setPayProof(null);
+    setPayProofPreview("");
+    setPaySubmitting(false);
   }
 
   function markStorySeen(userId: string) {
@@ -986,7 +1064,8 @@ export default function Home() {
     openPaySheet(
       "Lagos Girls Premium",
       5000,
-      "Pay ₦5,000 with Flutterwave, then tap I've paid. Messaging unlocks after confirm."
+      "Pay exactly ₦5,000, then upload your payment screenshot.",
+      { kind: "premium" }
     );
   }
 
@@ -1045,7 +1124,8 @@ export default function Home() {
     openPaySheet(
       gift.emoji + " " + gift.name,
       gift.price,
-      "Gift for @" + (context || "her") + " — after payment message: I sent you a " + gift.name
+      "Send screenshot of ₦" + gift.price.toLocaleString() + " for this gift",
+      { kind: "gift", girlName: context || "" }
     );
     // Log gift intent in chat if possible
     try {
@@ -1078,7 +1158,24 @@ async function requestService(
       service.desc ? ` (${service.desc})` : ""
     }. How do I pay?`;
     await startChat(girlId, text);
-    openPaySheet(service.name, Number(service.price), "Booked in chat — pay then message: I have paid");
+    // load girl display for pay sheet
+    let girlName = "";
+    let girlAvatar = "";
+    try {
+      const { data: g } = await supabase
+        .from("profiles")
+        .select("username, display_name, avatar_url")
+        .eq("id", girlId)
+        .maybeSingle();
+      girlName = g?.username || g?.display_name || "";
+      girlAvatar = g?.avatar_url || "";
+    } catch {}
+    openPaySheet(
+      `${girlName ? girlName + " · " : ""}${service.name}`,
+      Number(service.price),
+      `Send screenshot of ₦${Number(service.price).toLocaleString()} payment for ${service.name}`,
+      { kind: "service", girlName, girlAvatar }
+    );
   }
 
   async function loadChatMessages(conversationId: string) {
@@ -3705,60 +3802,147 @@ async function requestService(
           </div>
         )}
 
-        {/* Payment instructions sheet */}
+        {/* Payment sheet — Flutterwave + screenshot */}
         {paySheet && (
-          <div className="fixed inset-0 z-[80] bg-black/85 flex items-end sm:items-center justify-center p-4">
-            <div className="w-full max-w-sm bg-zinc-900 border border-zinc-700 rounded-2xl p-5 max-h-[85vh] overflow-y-auto">
-              <h3 className="text-[17px] font-semibold mb-1">{paySheet.title}</h3>
+          <div className="fixed inset-0 z-[80] bg-black/90 flex items-end sm:items-center justify-center p-3">
+            <div className="w-full max-w-sm bg-zinc-950 border border-zinc-700 rounded-2xl p-5 max-h-[92vh] overflow-y-auto">
+              {/* Who / what */}
+              <div className="flex items-center gap-3 mb-4">
+                {paySheet.girlAvatar ? (
+                  <img
+                    src={paySheet.girlAvatar}
+                    className="w-14 h-14 rounded-full object-cover ring-2 ring-pink-500/50"
+                    alt=""
+                  />
+                ) : (
+                  <div className="w-14 h-14 rounded-full bg-zinc-800 flex items-center justify-center text-xl">
+                    {paySheet.kind === "gift" ? "🎁" : paySheet.kind === "premium" ? "★" : "💳"}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="text-[11px] text-gray-500 uppercase tracking-wide">
+                    {paySheet.kind === "service"
+                      ? "Service"
+                      : paySheet.kind === "private"
+                      ? "Private content"
+                      : paySheet.kind === "gift"
+                      ? "Gift"
+                      : "Premium"}
+                  </p>
+                  <h3 className="text-[16px] font-bold truncate">{paySheet.title}</h3>
+                  {paySheet.girlName && (
+                    <p className="text-[13px] text-pink-400 truncate">
+                      for @{paySheet.girlName}
+                    </p>
+                  )}
+                </div>
+              </div>
+
               {paySheet.amount != null && (
-                <p className="text-pink-400 font-bold text-[18px] mb-2">
-                  ₦{Number(paySheet.amount).toLocaleString()}
-                </p>
+                <div className="bg-zinc-900 border border-pink-500/30 rounded-xl px-4 py-3 mb-4 text-center">
+                  <p className="text-[12px] text-gray-400">Pay exactly</p>
+                  <p className="text-pink-400 font-bold text-[28px] leading-tight">
+                    ₦{Number(paySheet.amount).toLocaleString()}
+                  </p>
+                </div>
               )}
-              {paySheet.note && (
-                <p className="text-[12px] text-gray-500 mb-3">{paySheet.note}</p>
-              )}
+
+              <ol className="text-[13px] text-gray-300 space-y-2 mb-4 list-decimal list-inside">
+                <li>
+                  Tap <span className="text-orange-400 font-semibold">Pay with Flutterwave</span>
+                </li>
+                <li>
+                  Pay{" "}
+                  <span className="text-white font-semibold">
+                    ₦{Number(paySheet.amount || 0).toLocaleString()}
+                  </span>
+                  {paySheet.kind !== "premium" && " (enter this amount if asked)"}
+                </li>
+                <li>Take a screenshot of the successful payment</li>
+                <li>Upload the screenshot below and tap I have sent</li>
+              </ol>
+
               {(() => {
-                const link = resolvePaymentLink(
-                  paySheet.title,
-                  paySheet.amount
-                );
-                return link ? (
+                const link = resolvePaymentLink(paySheet.title, paySheet.amount);
+                const href = link || "https://flutterwave.com/pay/akzwjeac8hfh";
+                return (
                   <a
-                    href={link}
+                    href={href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block w-full text-center bg-orange-500 hover:bg-orange-400 text-black py-3.5 rounded-xl font-bold text-[15px] mb-3"
+                    className="block w-full text-center bg-orange-500 hover:bg-orange-400 text-black py-3.5 rounded-xl font-bold text-[15px] mb-4"
                   >
                     Pay with Flutterwave
                   </a>
-                ) : null;
+                );
               })()}
-              <p className="text-[12px] text-gray-400 mb-1 font-medium">
-                Or transfer manually
+
+              <p className="text-[12px] text-gray-400 mb-2 font-medium">
+                Upload payment screenshot
               </p>
-              <pre className="text-[13px] text-gray-200 whitespace-pre-wrap bg-zinc-950 border border-zinc-800 rounded-xl p-3 mb-4 font-sans">
-                {getPaymentInstructions()}
-              </pre>
+              <label className="block w-full border border-dashed border-zinc-600 rounded-xl p-4 text-center cursor-pointer mb-3 hover:border-pink-500/50">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    setPayProof(f);
+                    setPayProofPreview(URL.createObjectURL(f));
+                  }}
+                />
+                {payProofPreview ? (
+                  <img
+                    src={payProofPreview}
+                    alt="Payment proof"
+                    className="max-h-48 mx-auto rounded-lg object-contain"
+                  />
+                ) : (
+                  <span className="text-[13px] text-gray-400">
+                    Tap to choose screenshot
+                  </span>
+                )}
+              </label>
+              {payProof && (
+                <p className="text-[11px] text-green-400 text-center mb-2">
+                  Screenshot ready — preview above
+                </p>
+              )}
+
               <button
-                onClick={() =>
-                  submitPaidRequest(
+                disabled={paySubmitting || !payProof}
+                onClick={async () => {
+                  if (!payProof) {
+                    setMessage("Upload your payment screenshot first");
+                    return;
+                  }
+                  await submitPaidRequest(
                     paySheet.title +
                       (paySheet.amount != null
                         ? ` ₦${Number(paySheet.amount).toLocaleString()}`
                         : ""),
-                    paySheet.note
-                  )
-                }
-                className="w-full bg-pink-600 py-3 rounded-xl font-semibold text-[14px] mb-2"
+                    paySheet.note,
+                    paySheet.mediaId
+                  );
+                  setPaySubmitting(false);
+                  setPaySheet(null);
+                  setPayProof(null);
+                  setPayProofPreview("");
+                  setMessage(
+                    "Sent. We will confirm your payment shortly."
+                  );
+                }}
+                className="w-full bg-pink-600 disabled:opacity-40 py-3.5 rounded-xl font-semibold text-[15px] mb-2"
               >
-                I&apos;ve paid
+                {paySubmitting ? "Sending…" : "I have sent"}
               </button>
-              <p className="text-[11px] text-gray-500 text-center mb-2">
-                After paying, tap I&apos;ve paid — admin confirms
-              </p>
               <button
-                onClick={() => setPaySheet(null)}
+                onClick={() => {
+                  setPaySheet(null);
+                  setPayProof(null);
+                  setPayProofPreview("");
+                }}
                 className="w-full bg-zinc-800 py-3 rounded-xl text-[14px] text-gray-300"
               >
                 Close
@@ -3782,24 +3966,65 @@ async function requestService(
               <p className="text-pink-400 font-bold text-[18px] mb-3">
                 ₦{Number(unlockTarget.price).toLocaleString()}
               </p>
-              <p className="text-[12px] text-gray-400 mb-1 font-medium">How to pay</p>
-              <pre className="text-[13px] text-gray-200 whitespace-pre-wrap bg-zinc-950 border border-zinc-800 rounded-xl p-3 mb-4 font-sans">
-                {getPaymentInstructions()}
-              </pre>
+              <ol className="text-[13px] text-gray-300 space-y-1.5 mb-3 list-decimal list-inside">
+                <li>Pay exactly ₦{Number(unlockTarget.price).toLocaleString()} on Flutterwave</li>
+                <li>Upload screenshot of successful payment</li>
+                <li>Tap I have sent — unlock after admin confirms</li>
+              </ol>
+              <a
+                href={resolvePaymentLink("private", Number(unlockTarget.price)) || "https://flutterwave.com/pay/akzwjeac8hfh"}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block w-full text-center bg-orange-500 text-black py-3 rounded-xl font-bold text-[14px] mb-3"
+              >
+                Pay with Flutterwave
+              </a>
+              <label className="block w-full border border-dashed border-zinc-600 rounded-xl p-3 text-center cursor-pointer mb-3">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    setPayProof(f);
+                    setPayProofPreview(URL.createObjectURL(f));
+                  }}
+                />
+                {payProofPreview ? (
+                  <img src={payProofPreview} className="max-h-40 mx-auto rounded-lg" alt="" />
+                ) : (
+                  <span className="text-[13px] text-gray-400">Upload payment screenshot</span>
+                )}
+              </label>
               <button
-                onClick={() => {
-                  submitPaidRequest(
+                disabled={!payProof || paySubmitting}
+                onClick={async () => {
+                  if (!payProof) return setMessage("Upload screenshot first");
+                  setPaySheet({
+                    title: `Private: ${unlockTarget.title}`,
+                    amount: Number(unlockTarget.price),
+                    kind: "private",
+                    mediaId: unlockTarget.id,
+                  });
+                  await submitPaidRequest(
                     `Private: ${unlockTarget.title} ₦${Number(unlockTarget.price).toLocaleString()}`,
                     `media:${unlockTarget.id}`,
                     unlockTarget.id
                   );
+                  setPaySubmitting(false);
+                  setUnlockTarget(null);
+                  setPayProof(null);
+                  setPayProofPreview("");
+                  setPaySheet(null);
+                  setMessage("Sent. Unlock after payment is confirmed.");
                 }}
-                className="w-full bg-pink-600 py-3 rounded-xl font-semibold text-[14px] mb-2"
+                className="w-full bg-pink-600 disabled:opacity-40 py-3 rounded-xl font-semibold text-[14px] mb-2"
               >
-                I&apos;ve paid — request unlock
+                I have sent
               </button>
               <p className="text-[11px] text-gray-500 text-center mb-2">
-                Content unlocks after admin confirms payment
+                Content unlocks after admin confirms
               </p>
               <button
                 onClick={() => setUnlockTarget(null)}
