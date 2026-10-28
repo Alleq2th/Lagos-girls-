@@ -24,27 +24,29 @@ const GIFT_CATALOG = [
   { id: "island", name: "Private Island", emoji: "🏝️", price: 1000000 },
 ];
 
-/** Flutterwave payment links — add more as you create them */
-const PAYMENT_LINKS: { match: RegExp; url: string; label: string }[] = [
-  {
-    match: /premium/i,
-    url: "https://flutterwave.com/pay/akzwjeac8hfh",
-    label: "Pay Premium ₦5,000",
-  },
-  // Add more links here later, e.g.:
-  // { match: /video call/i, url: "https://flutterwave.com/pay/xxxx", label: "Pay Video Call" },
-];
+/** Flutterwave payment links */
+const LINK_PREMIUM = "https://flutterwave.com/pay/akzwjeac8hfh";
+const LINK_SERVICES = "https://flutterwave.com/pay/kscqwb7b3gg3";
+const LINK_PRIVATE = "https://flutterwave.com/pay/gofy8khoseak";
+const LINK_GIFTS = "https://flutterwave.com/pay/dttxy2oznwxd";
 
-function resolvePaymentLink(title: string, amount?: number): string | null {
-  const t = title || "";
-  for (const row of PAYMENT_LINKS) {
-    if (row.match.test(t)) return row.url;
-  }
-  // Premium amount shortcut
-  if (amount === 5000 && /premium|become/i.test(t)) {
-    return "https://flutterwave.com/pay/akzwjeac8hfh";
-  }
-  return null;
+function resolvePaymentLink(
+  title: string,
+  amount?: number,
+  kind?: string
+): string | null {
+  const k = (kind || "").toLowerCase();
+  const t = (title || "").toLowerCase();
+
+  if (k === "gift" || /gift|🌹|💋|🔥|💎|👑|🏎️|🛥️|🏝️/.test(t)) return LINK_GIFTS;
+  if (k === "private" || /private|unlock|bundle/.test(t)) return LINK_PRIVATE;
+  if (k === "service" || /video call|voice call|custom video|private chat|book/.test(t))
+    return LINK_SERVICES;
+  if (k === "premium" || /premium|become/.test(t)) return LINK_PREMIUM;
+  if (amount === 5000 && /premium/.test(t)) return LINK_PREMIUM;
+
+  // Default: services open-amount link for unknown paid items
+  return LINK_SERVICES;
 }
 
 export default function Home() {
@@ -3863,8 +3865,12 @@ async function requestService(
               </ol>
 
               {(() => {
-                const link = resolvePaymentLink(paySheet.title, paySheet.amount);
-                const href = link || "https://flutterwave.com/pay/akzwjeac8hfh";
+                const link = resolvePaymentLink(
+                  paySheet.title,
+                  paySheet.amount,
+                  paySheet.kind
+                );
+                const href = link || LINK_SERVICES;
                 return (
                   <a
                     href={href}
@@ -3972,7 +3978,7 @@ async function requestService(
                 <li>Tap I have sent — unlock after admin confirms</li>
               </ol>
               <a
-                href={resolvePaymentLink("private", Number(unlockTarget.price)) || "https://flutterwave.com/pay/akzwjeac8hfh"}
+                href={resolvePaymentLink("private", Number(unlockTarget.price), "private") || LINK_PRIVATE}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="block w-full text-center bg-orange-500 text-black py-3 rounded-xl font-bold text-[14px] mb-3"
