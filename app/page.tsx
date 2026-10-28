@@ -24,6 +24,29 @@ const GIFT_CATALOG = [
   { id: "island", name: "Private Island", emoji: "🏝️", price: 1000000 },
 ];
 
+/** Flutterwave payment links — add more as you create them */
+const PAYMENT_LINKS: { match: RegExp; url: string; label: string }[] = [
+  {
+    match: /premium/i,
+    url: "https://flutterwave.com/pay/akzwjeac8hfh",
+    label: "Pay Premium ₦5,000",
+  },
+  // Add more links here later, e.g.:
+  // { match: /video call/i, url: "https://flutterwave.com/pay/xxxx", label: "Pay Video Call" },
+];
+
+function resolvePaymentLink(title: string, amount?: number): string | null {
+  const t = title || "";
+  for (const row of PAYMENT_LINKS) {
+    if (row.match.test(t)) return row.url;
+  }
+  // Premium amount shortcut
+  if (amount === 5000 && /premium|become/i.test(t)) {
+    return "https://flutterwave.com/pay/akzwjeac8hfh";
+  }
+  return null;
+}
+
 export default function Home() {
   const [session, setSession] = useState<any>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -960,22 +983,11 @@ export default function Home() {
   async function becomePremium() {
     if (!session || !profile) return;
     if (profile.is_premium) return setMessage("You are already Premium");
-
-    const confirmPay = confirm("Become Premium for ₦5,000?\n\nYou will be able to message girls.");
-    if (!confirmPay) return;
-
-    // For now we just activate it (later we connect real Paystack)
-    const { error } = await supabase
-      .from("profiles")
-      .update({ is_premium: true })
-      .eq("id", session.user.id);
-
-    if (error) {
-      setMessage(error.message);
-    } else {
-      setMessage("🎉 You are now Premium!");
-      ensureProfile(session.user);
-    }
+    openPaySheet(
+      "Lagos Girls Premium",
+      5000,
+      "Pay ₦5,000 with Flutterwave, then tap I've paid. Messaging unlocks after confirm."
+    );
   }
 
   // ========== MESSAGING ==========
@@ -3706,7 +3718,25 @@ async function requestService(
               {paySheet.note && (
                 <p className="text-[12px] text-gray-500 mb-3">{paySheet.note}</p>
               )}
-              <p className="text-[12px] text-gray-400 mb-1 font-medium">How to pay</p>
+              {(() => {
+                const link = resolvePaymentLink(
+                  paySheet.title,
+                  paySheet.amount
+                );
+                return link ? (
+                  <a
+                    href={link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full text-center bg-orange-500 hover:bg-orange-400 text-black py-3.5 rounded-xl font-bold text-[15px] mb-3"
+                  >
+                    Pay with Flutterwave
+                  </a>
+                ) : null;
+              })()}
+              <p className="text-[12px] text-gray-400 mb-1 font-medium">
+                Or transfer manually
+              </p>
               <pre className="text-[13px] text-gray-200 whitespace-pre-wrap bg-zinc-950 border border-zinc-800 rounded-xl p-3 mb-4 font-sans">
                 {getPaymentInstructions()}
               </pre>
@@ -3724,6 +3754,9 @@ async function requestService(
               >
                 I&apos;ve paid
               </button>
+              <p className="text-[11px] text-gray-500 text-center mb-2">
+                After paying, tap I&apos;ve paid — admin confirms
+              </p>
               <button
                 onClick={() => setPaySheet(null)}
                 className="w-full bg-zinc-800 py-3 rounded-xl text-[14px] text-gray-300"
