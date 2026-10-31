@@ -33,6 +33,7 @@ export default function AdminPage() {
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
+  const [bulkNames, setBulkNames] = useState("");
   const [location, setLocation] = useState("Lagos");
   const [role, setRole] = useState<"GIRL" | "GUY">("GIRL");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -113,14 +114,14 @@ export default function AdminPage() {
             const saved = localStorage.getItem(PAYMENT_KEY);
             setPaymentText(
               saved ||
-                "Pay to:\nOPay: 0000000000 (Name)\nMoniepoint: 0000000000 (Name)\nCrypto: USDT TRC20 — your_wallet\n\nAfter payment, message: I have paid for [service]."
+                "Pay to: Lagos Girls Admin\n\nBank: OPay\nAccount: 9010693322\nName: Lagos Girls Admin\n\nTransfer exact amount, then upload screenshot."
             );
           }
         } catch {
           const saved = localStorage.getItem(PAYMENT_KEY);
           setPaymentText(
             saved ||
-              "Pay to:\nOPay: 0000000000 (Name)\nMoniepoint: 0000000000 (Name)\n\nAfter payment, message: I have paid for [service]."
+              "Pay to: Lagos Girls Admin\n\nBank: OPay\nAccount: 9010693322\nName: Lagos Girls Admin\n\nTransfer exact amount, then upload screenshot."
           );
         }
         loadUnlockRequests();
@@ -168,7 +169,7 @@ export default function AdminPage() {
   async function loadAccounts() {
     const { data } = await supabase
       .from("profiles")
-      .select("*")
+      .select("id, username, display_name, role, avatar_url, is_premium, is_banned, services, followers_count, account_source, referrer_id, created_at")
       .order("created_at", { ascending: false });
     if (data) setAccounts(data);
   }
@@ -289,6 +290,42 @@ export default function AdminPage() {
     }
   }
 
+  async function createOneGirl(
+    rawUser: string,
+    rawDisplay?: string,
+    rawBio?: string
+  ) {
+    const cleanUsername = rawUser
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "")
+      .slice(0, 20);
+    if (!cleanUsername) throw new Error("Empty username");
+    const fakeEmail = `${cleanUsername}@lagosgirls.app`;
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: fakeEmail,
+      password: "FakePass123!",
+      options: { data: { username: cleanUsername, role: "GIRL" } },
+    });
+    if (authError) throw authError;
+    if (!authData.user) throw new Error("Failed to create " + cleanUsername);
+
+    const services = JSON.stringify(DEFAULT_SERVICES);
+    const { error: profileError } = await supabase.from("profiles").insert({
+      id: authData.user.id,
+      username: cleanUsername,
+      display_name: (rawDisplay || cleanUsername).slice(0, 40),
+      bio: rawBio || "",
+      location: "Lagos",
+      role: "GIRL",
+      avatar_url: null,
+      is_premium: false,
+      services,
+      account_source: "admin",
+    } as any);
+    if (profileError) throw profileError;
+    return cleanUsername;
+  }
+
   async function createFakeAccount() {
     if (!username) return setMessage("Username is required");
     setLoading(true);
@@ -298,7 +335,6 @@ export default function AdminPage() {
         .toLowerCase()
         .replace(/[^a-z0-9]/g, "")
         .slice(0, 20);
-      // Fixed email so login works with username + FakePass123!
       const fakeEmail = `${cleanUsername}@lagosgirls.app`;
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: fakeEmail,
@@ -316,7 +352,9 @@ export default function AdminPage() {
           .from("avatars")
           .upload(fileName, avatarFile, { upsert: true });
         if (!uploadError) {
-          const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(fileName);
+          const { data: urlData } = supabase.storage
+            .from("avatars")
+            .getPublicUrl(fileName);
           avatar_url = urlData.publicUrl;
         }
       }
@@ -334,12 +372,11 @@ export default function AdminPage() {
         avatar_url,
         is_premium: false,
         services,
-      });
+        account_source: "admin",
+      } as any);
       if (profileError) throw profileError;
 
-      setMessage(
-        `Created @${cleanUsername} — login: username + password FakePass123!`
-      );
+      setMessage(`Created @${cleanUsername}`);
       setUsername("");
       setDisplayName("");
       setBio("");
@@ -349,6 +386,44 @@ export default function AdminPage() {
     } catch (e: any) {
       setMessage(e.message || "Create failed");
     }
+    setLoading(false);
+  }
+
+  async function bulkCreateFromList() {
+    const lines = (bulkNames || "")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (!lines.length) return setMessage("Paste usernames first (one per line)");
+    setLoading(true);
+    setMessage("Creating " + lines.length + " accounts…");
+    let ok = 0;
+    let fail = 0;
+    const errors: string[] = [];
+    for (const line of lines) {
+      // formats: username | display name | bio
+      const parts = line.split("|").map((p) => p.trim());
+      const u = parts[0];
+      const d = parts[1];
+      const b = parts[2];
+      try {
+        await createOneGirl(u, d, b);
+        ok++;
+        setMessage(`Created ${ok}/${lines.length}…`);
+      } catch (e: any) {
+        fail++;
+        errors.push((u || "?") + ": " + (e.message || "fail"));
+      }
+      // small pause so auth rate limits are less likely
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    setMessage(
+      `Done: ${ok} created, ${fail} failed` +
+        (errors.length ? " — " + errors.slice(0, 3).join("; ") : "")
+    );
+    setBulkNames("");
+    loadAccounts();
+    loadStats();
     setLoading(false);
   }
 
@@ -1694,7 +1769,7 @@ export default function AdminPage() {
           <div>
             <div className="flex items-center justify-between mb-4">
               <p className="text-xs text-gray-500">
-                Users tap “I’ve paid” → appear here. Approve only after you confirm transfer.
+                Users transfer to OPay Lagos Girls Admin → screenshot → appear here. Approve after you confirm.
               </p>
               <button onClick={loadUnlockRequests} className="text-xs text-pink-500 shrink-0 ml-2">
                 Refresh
@@ -1818,6 +1893,32 @@ export default function AdminPage() {
               >
                 {loading ? "Creating..." : "Create account"}
               </button>
+
+              <div className="mt-5 pt-4 border-t border-zinc-800">
+                <h4 className="font-bold text-sm mb-1">Bulk create girls</h4>
+                <p className="text-[11px] text-gray-500 mb-2">
+                  One per line. Optional: username | Display Name | bio
+                  <br />
+                  All get default services + password FakePass123!
+                </p>
+                <textarea
+                  value={bulkNames}
+                  onChange={(e) => setBulkNames(e.target.value)}
+                  rows={6}
+                  placeholder={
+                    "adaeze\nchioma | Chioma B\nmommyvitah | Mommy Vitah | Lagos babe"
+                  }
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-xs mb-2 font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={bulkCreateFromList}
+                  disabled={loading || !bulkNames.trim()}
+                  className="w-full bg-pink-700 py-3 rounded-xl font-semibold text-sm disabled:opacity-50"
+                >
+                  {loading ? "Creating…" : "Create all from list"}
+                </button>
+              </div>
             </div>
 
             {/* Bulk free videos — no account open required */}
@@ -1915,6 +2016,10 @@ export default function AdminPage() {
                       <p className="text-xs text-gray-500 truncate">
                         @{acc.username} · {acc.role}
                         {acc.is_premium ? " · ★" : ""}
+                        {acc.account_source ? " · " + acc.account_source : ""}
+                      </p>
+                      <p className="text-[10px] text-gray-600 font-mono truncate">
+                        id: {String(acc.id).slice(0, 8)}…
                       </p>
                     </div>
                   </button>
