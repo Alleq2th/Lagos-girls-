@@ -940,13 +940,21 @@ export default function Home() {
       const page = reset ? 0 : feedPage + 1;
       const from = page * FEED_PAGE_SIZE;
       const to = from + FEED_PAGE_SIZE - 1;
-      const { data } = await supabase
+      // Use * so missing optional columns never break the whole feed
+      const { data, error } = await supabase
         .from("posts")
         .select(
-          `id, user_id, media_url, media_urls, media_type, caption, is_private, price, likes_boost, comments_boost, comments_count, created_at, profiles (id, username, display_name, avatar_url, role, location)`
+          `*, profiles (id, username, display_name, avatar_url, role, location, services)`
         )
         .order("created_at", { ascending: false })
         .range(from, to);
+
+      if (error) {
+        console.error("loadPosts", error);
+        setMessage("Feed error: " + error.message);
+        if (reset) setPosts([]);
+        return;
+      }
 
       const batch = data || [];
       setFeedHasMore(batch.length >= FEED_PAGE_SIZE);
@@ -966,9 +974,12 @@ export default function Home() {
             return merged;
           });
         }
-      } else if (reset && !feedLoadedRef.current) {
+      } else if (reset) {
         setPosts([]);
       }
+    } catch (e: any) {
+      console.error(e);
+      setMessage("Feed failed to load");
     } finally {
       setFeedLoading(false);
       setFeedLoadingMore(false);
@@ -984,7 +995,7 @@ export default function Home() {
     if (!session) return;
     const { data } = await supabase
       .from("posts")
-      .select("id, media_url, media_urls, media_type, caption, is_private, price, created_at, likes_boost, comments_count")
+      .select("*")
       .eq("user_id", session.user.id)
       .order("created_at", { ascending: false })
       .limit(60);
