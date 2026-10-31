@@ -24,59 +24,59 @@ const GIFT_CATALOG = [
   { id: "island", name: "Private Island", emoji: "🏝️", price: 1000000 },
 ];
 
-/** Flutterwave payment links */
-const LINK_PREMIUM = "https://flutterwave.com/pay/akzwjeac8hfh";
-const LINK_SERVICES = "https://flutterwave.com/pay/kscqwb7b3gg3";
-const LINK_PRIVATE = "https://flutterwave.com/pay/gofy8khoseak";
-const LINK_GIFTS = "https://flutterwave.com/pay/dttxy2oznwxd";
+/** OPay — all payments go here (display name only) */
+const OPAY_ACCOUNT = "9010693322";
+const OPAY_BANK = "OPay";
+const OPAY_DISPLAY_NAME = "Lagos Girls Admin";
 
-function resolvePaymentLink(
-  title: string,
-  amount?: number,
-  kind?: string
-): string | null {
-  const k = (kind || "").toLowerCase();
-  const t = (title || "").toLowerCase();
+const DEFAULT_PAYMENT_TEXT = `Pay to: Lagos Girls Admin
 
-  if (k === "gift" || /gift|🌹|💋|🔥|💎|👑|🏎️|🛥️|🏝️/.test(t)) return LINK_GIFTS;
-  if (k === "private" || /private|unlock|bundle/.test(t)) return LINK_PRIVATE;
-  if (k === "service" || /video call|voice call|custom video|private chat|book/.test(t))
-    return LINK_SERVICES;
-  if (k === "premium" || /premium|become/.test(t)) return LINK_PREMIUM;
-  if (amount === 5000 && /premium/.test(t)) return LINK_PREMIUM;
+Bank: OPay
+Account: 9010693322
+Name: Lagos Girls Admin
 
-  // Default: services open-amount link for unknown paid items
-  return LINK_SERVICES;
+Transfer the EXACT amount shown.
+Then upload your payment screenshot below.`;
+
+function isCallService(title: string) {
+  return /video call|voice call|face call/i.test(title || "");
+}
+
+function isVideoCall(title: string) {
+  return /video call|face call/i.test(title || "");
 }
 
 
 const DEFAULT_EVENTS = [
   {
     id: "evt-vip",
-    title: "VIP Private Night",
-    teaser: "Very limited. Invite-only energy.",
+    title: "VIP Private 1-on-1",
+    teaser: "Private night with one creator. You + her only.",
     price: 150000,
-    seats_left: 4,
-    seats_total: 12,
+    seats_left: 3,
+    seats_total: 10,
     emoji: "🔥",
+    bg: "https://images.unsplash.com/photo-1519677100203-a0e668c92439?w=800&q=60",
   },
   {
     id: "evt-orgy",
-    title: "Exclusive Group Night",
-    teaser: "Only a few seats. Once full, it closes.",
+    title: "Exclusive Orgy Night",
+    teaser: "Orgy night with our creators. 2 girls to 1 guy. Selected seats only.",
     price: 100000,
-    seats_left: 7,
-    seats_total: 20,
+    seats_left: 6,
+    seats_total: 18,
     emoji: "💋",
+    bg: "https://images.unsplash.com/photo-1566737236500-c8ac43014a67?w=800&q=60",
   },
   {
-    id: "evt-couples",
-    title: "Couples Only Session",
-    teaser: "Curated. No walk-ins. High demand.",
-    price: 200000,
-    seats_left: 2,
-    seats_total: 8,
-    emoji: "✨",
+    id: "evt-camera",
+    title: "No-Camera Private Party",
+    teaser: "Phones locked away. Creators only. What happens stays in the room.",
+    price: 130000,
+    seats_left: 4,
+    seats_total: 14,
+    emoji: "🔒",
+    bg: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800&q=60",
   },
 ];
 
@@ -142,15 +142,19 @@ export default function Home() {
   const [payProof, setPayProof] = useState<File | null>(null);
   const [payProofPreview, setPayProofPreview] = useState("");
   const [paySubmitting, setPaySubmitting] = useState(false);
+  const [callUI, setCallUI] = useState<null | {
+    type: "video" | "voice";
+    name: string;
+    avatar?: string;
+  }>(null);
+  const [referralCode, setReferralCode] = useState("");
   const [unlockTarget, setUnlockTarget] = useState<any | null>(null);
   const [unlockedIds, setUnlockedIds] = useState<string[]>([]);
   const [readMap, setReadMap] = useState<Record<string, string>>({});
   const [followingIds, setFollowingIds] = useState<string[]>([]);
   const [chatServices, setChatServices] = useState<{ name: string; price: number; desc?: string }[]>([]);
   const [showChatBook, setShowChatBook] = useState(false);
-  const [paymentInstructions, setPaymentInstructions] = useState(
-    "Pay to:\nOPay: (set in Admin)\nMoniepoint: (set in Admin)\n\nAfter payment, tap I've paid on the pay screen."
-  );
+  const [paymentInstructions, setPaymentInstructions] = useState(DEFAULT_PAYMENT_TEXT);
   const [seenStoryUsers, setSeenStoryUsers] = useState<string[]>([]);
   const [premiumWall, setPremiumWall] = useState(false);
   const [followerCount, setFollowerCount] = useState(0);
@@ -520,6 +524,29 @@ export default function Home() {
   }
 
   
+  useEffect(() => {
+    if (!callUI) return;
+    const tmr = setTimeout(() => {
+      setCallUI(null);
+      setMessage("No answer — she didn't pick up. Try again later.");
+    }, 14000);
+    return () => clearTimeout(tmr);
+  }, [callUI]);
+
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const ref = params.get("ref") || params.get("r") || "";
+      if (ref) {
+        localStorage.setItem("lagos_ref", ref.toLowerCase().replace(/[^a-z0-9_]/g, ""));
+        setReferralCode(ref.toLowerCase().replace(/[^a-z0-9_]/g, ""));
+      } else {
+        const saved = localStorage.getItem("lagos_ref") || "";
+        if (saved) setReferralCode(saved);
+      }
+    } catch {}
+  }, []);
+
   useEffect(() => {
     if (!appEvents.length) return;
     const tmr = setInterval(() => {
@@ -1410,12 +1437,49 @@ async function requestService(
     }
 
     if (data.user) {
+      let referrer_id: string | null = null;
+      let account_source = "organic";
+      try {
+        const ref =
+          referralCode ||
+          (typeof window !== "undefined"
+            ? localStorage.getItem("lagos_ref") || ""
+            : "");
+        if (ref) {
+          const { data: refProf } = await supabase
+            .from("profiles")
+            .select("id, username")
+            .eq("username", ref.toLowerCase())
+            .maybeSingle();
+          if (refProf?.id) {
+            referrer_id = refProf.id;
+            account_source = "referral";
+          }
+        }
+      } catch {}
       await supabase.from("profiles").insert({
         id: data.user.id,
         username: username.toLowerCase(),
         display_name: username,
         role,
-      });
+        referrer_id,
+        account_source,
+      } as any);
+      // Deep link to referrer profile after signup
+      try {
+        const ref =
+          referralCode || localStorage.getItem("lagos_ref") || "";
+        if (ref) {
+          const { data: refProf } = await supabase
+            .from("profiles")
+            .select("id")
+            .eq("username", ref.toLowerCase())
+            .maybeSingle();
+          if (refProf?.id) {
+            setTimeout(() => openUserProfile(refProf.id), 500);
+          }
+        }
+      } catch {}
       setMessage("Account created!");
     }
     setLoading(false);
@@ -2069,46 +2133,58 @@ async function requestService(
                   el.scrollTo({ left: eventSlide * (w * 0.85 + 12), behavior: "smooth" });
                 }}
               >
-                {appEvents.map((ev, idx) => (
+                {appEvents.map((ev) => (
                   <button
                     key={ev.id}
                     type="button"
                     onClick={() => setSelectedEvent(ev)}
-                    className="snap-start shrink-0 w-[85%] text-left rounded-2xl border border-pink-500/40 bg-gradient-to-br from-zinc-900 via-zinc-950 to-black p-4 active:scale-[0.98] transition"
+                    className="snap-start shrink-0 w-[85%] text-left rounded-2xl border border-pink-500/50 overflow-hidden active:scale-[0.98] transition relative min-h-[148px]"
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-[20px] mb-1">{ev.emoji}</p>
-                        <h3 className="text-[16px] font-bold text-white leading-tight">
-                          {ev.title}
-                        </h3>
-                        <p className="text-[12px] text-gray-400 mt-1">{ev.teaser}</p>
-                      </div>
-                      <span className="text-[10px] font-bold bg-pink-600/90 text-white px-2 py-1 rounded-full shrink-0">
-                        {ev.seats_left} left
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between mt-3">
-                      <p className="text-pink-400 font-bold text-[15px]">
-                        ₦{Number(ev.price).toLocaleString()}
-                      </p>
-                      <span className="text-[11px] text-gray-500">
-                        {ev.seats_total} seats total
-                      </span>
-                    </div>
-                    <div className="mt-2 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                    {ev.bg && (
                       <div
-                        className="h-full bg-pink-500 rounded-full"
-                        style={{
-                          width: `${Math.max(
-                            8,
-                            Math.round(
-                              ((ev.seats_total - ev.seats_left) / Math.max(ev.seats_total, 1)) *
-                                100
-                            )
-                          )}%`,
-                        }}
+                        className="absolute inset-0 bg-cover bg-center"
+                        style={{ backgroundImage: `url(${ev.bg})` }}
                       />
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-r from-black/92 via-black/80 to-black/55" />
+                    <div className="relative p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-[20px] mb-1">{ev.emoji}</p>
+                          <h3 className="text-[16px] font-bold text-white leading-tight">
+                            {ev.title}
+                          </h3>
+                          <p className="text-[12px] text-gray-200/90 mt-1 leading-snug">
+                            {ev.teaser}
+                          </p>
+                        </div>
+                        <span className="text-[10px] font-bold bg-pink-600 text-white px-2 py-1 rounded-full shrink-0 shadow">
+                          {ev.seats_left} left
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between mt-3">
+                        <p className="text-pink-400 font-bold text-[15px]">
+                          ₦{Number(ev.price).toLocaleString()}
+                        </p>
+                        <span className="text-[11px] text-gray-300">
+                          {ev.seats_total} seats total
+                        </span>
+                      </div>
+                      <div className="mt-2 h-1.5 bg-black/50 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-pink-500 rounded-full"
+                          style={{
+                            width: `${Math.max(
+                              8,
+                              Math.round(
+                                ((ev.seats_total - ev.seats_left) /
+                                  Math.max(ev.seats_total, 1)) *
+                                  100
+                              )
+                            )}%`,
+                          }}
+                        />
+                      </div>
                     </div>
                   </button>
                 ))}
@@ -3034,6 +3110,23 @@ async function requestService(
                   Become Premium — ₦5,000
                 </button>
               )}
+              {profile.role === "GIRL" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const link = `${window.location.origin}/?ref=${profile.username}`;
+                    try {
+                      navigator.clipboard.writeText(link);
+                      setMessage("Referral link copied — put it in your bio");
+                    } catch {
+                      setMessage(link);
+                    }
+                  }}
+                  className="w-full bg-pink-600/20 border border-pink-500/40 py-3 rounded-xl text-[13px] font-semibold text-pink-400"
+                >
+                  Copy referral link
+                </button>
+              )}
               <div className="flex gap-2.5">
                 <button
                   onClick={() => setView("edit")}
@@ -3904,45 +3997,56 @@ async function requestService(
         {/* Event FOMO detail */}
         {selectedEvent && (
           <div className="fixed inset-0 z-[80] bg-black/90 flex items-end sm:items-center justify-center p-3">
-            <div className="w-full max-w-sm bg-zinc-950 border border-pink-500/40 rounded-2xl p-5">
-              <p className="text-[28px] mb-1">{selectedEvent.emoji}</p>
-              <h3 className="text-[20px] font-bold mb-1">{selectedEvent.title}</h3>
-              <p className="text-[13px] text-gray-400 mb-3">{selectedEvent.teaser}</p>
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 mb-3">
-                <p className="text-[12px] text-gray-500">Entry</p>
-                <p className="text-pink-400 font-bold text-[24px]">
-                  ₦{Number(selectedEvent.price).toLocaleString()}
+            <div className="w-full max-w-sm bg-zinc-950 border border-pink-500/40 rounded-2xl overflow-hidden">
+              {selectedEvent.bg && (
+                <div
+                  className="h-28 bg-cover bg-center relative"
+                  style={{ backgroundImage: `url(${selectedEvent.bg})` }}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 to-black/40" />
+                </div>
+              )}
+              <div className="p-5">
+                <p className="text-[28px] mb-1">{selectedEvent.emoji}</p>
+                <h3 className="text-[20px] font-bold mb-1">{selectedEvent.title}</h3>
+                <p className="text-[13px] text-gray-300 mb-3">{selectedEvent.teaser}</p>
+                <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 mb-3">
+                  <p className="text-[12px] text-gray-500">Entry</p>
+                  <p className="text-pink-400 font-bold text-[24px]">
+                    ₦{Number(selectedEvent.price).toLocaleString()}
+                  </p>
+                  <p className="text-[13px] text-orange-400 font-semibold mt-1">
+                    Only {selectedEvent.seats_left} seats left
+                  </p>
+                </div>
+                <p className="text-[12px] text-gray-500 mb-4">
+                  No public location or date on the card. Details after payment is
+                  confirmed.
                 </p>
-                <p className="text-[13px] text-orange-400 font-semibold mt-1">
-                  Only {selectedEvent.seats_left} seats left
-                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const ev = selectedEvent;
+                    setSelectedEvent(null);
+                    openPaySheet(
+                      ev.title,
+                      Number(ev.price),
+                      "Event seat — pay exact amount, upload screenshot",
+                      { kind: "service", girlName: "Event" }
+                    );
+                  }}
+                  className="w-full bg-pink-600 py-3.5 rounded-xl font-bold text-[15px] mb-2"
+                >
+                  Claim a seat
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedEvent(null)}
+                  className="w-full bg-zinc-800 py-3 rounded-xl text-[14px] text-gray-300"
+                >
+                  Close
+                </button>
               </div>
-              <p className="text-[12px] text-gray-500 mb-4">
-                No public location. Details after payment is confirmed.
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  const ev = selectedEvent;
-                  setSelectedEvent(null);
-                  openPaySheet(
-                    ev.title,
-                    Number(ev.price),
-                    "Event seat — send screenshot of exact payment",
-                    { kind: "service", girlName: "Event" }
-                  );
-                }}
-                className="w-full bg-pink-600 py-3.5 rounded-xl font-bold text-[15px] mb-2"
-              >
-                Claim a seat
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedEvent(null)}
-                className="w-full bg-zinc-800 py-3 rounded-xl text-[14px] text-gray-300"
-              >
-                Close
-              </button>
             </div>
           </div>
         )}
@@ -4004,39 +4108,39 @@ async function requestService(
                 </div>
               )}
 
-              <ol className="text-[13px] text-gray-300 space-y-2 mb-4 list-decimal list-inside">
+              <ol className="text-[13px] text-gray-300 space-y-2 mb-3 list-decimal list-inside">
                 <li>
-                  Tap <span className="text-orange-400 font-semibold">Pay with Flutterwave</span>
+                  Open <span className="text-green-400 font-semibold">OPay</span> and transfer
                 </li>
                 <li>
-                  Pay{" "}
+                  Pay exactly{" "}
                   <span className="text-white font-semibold">
                     ₦{Number(paySheet.amount || 0).toLocaleString()}
                   </span>
-                  {paySheet.kind !== "premium" && " (enter this amount if asked)"}
                 </li>
-                <li>Take a screenshot of the successful payment</li>
-                <li>Upload the screenshot below and tap I have sent</li>
+                <li>Screenshot the successful transfer</li>
+                <li>Upload screenshot and tap I have sent</li>
               </ol>
 
-              {(() => {
-                const link = resolvePaymentLink(
-                  paySheet.title,
-                  paySheet.amount,
-                  paySheet.kind
-                );
-                const href = link || LINK_SERVICES;
-                return (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block w-full text-center bg-orange-500 hover:bg-orange-400 text-black py-3.5 rounded-xl font-bold text-[15px] mb-4"
-                  >
-                    Pay with Flutterwave
-                  </a>
-                );
-              })()}
+              <div className="bg-zinc-900 border border-green-700/40 rounded-xl p-3 mb-4">
+                <p className="text-[11px] text-gray-500 mb-1">Transfer to</p>
+                <p className="text-[15px] font-bold text-white">{OPAY_DISPLAY_NAME}</p>
+                <p className="text-[13px] text-gray-300 mt-1">
+                  {OPAY_BANK} · <span className="font-mono text-green-400">{OPAY_ACCOUNT}</span>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      navigator.clipboard.writeText(OPAY_ACCOUNT);
+                      setMessage("Account number copied");
+                    } catch {}
+                  }}
+                  className="mt-2 text-[11px] text-pink-400 font-semibold"
+                >
+                  Copy account number
+                </button>
+              </div>
 
               <p className="text-[12px] text-gray-400 mb-2 font-medium">
                 Upload payment screenshot
@@ -4078,8 +4182,11 @@ async function requestService(
                     setMessage("Upload your payment screenshot first");
                     return;
                   }
+                  const payTitle = paySheet.title;
+                  const payGirl = paySheet.girlName || "";
+                  const payAvatar = paySheet.girlAvatar || "";
                   await submitPaidRequest(
-                    paySheet.title +
+                    payTitle +
                       (paySheet.amount != null
                         ? ` ₦${Number(paySheet.amount).toLocaleString()}`
                         : ""),
@@ -4090,9 +4197,16 @@ async function requestService(
                   setPaySheet(null);
                   setPayProof(null);
                   setPayProofPreview("");
-                  setMessage(
-                    "Sent. We will confirm your payment shortly."
-                  );
+                  if (isCallService(payTitle)) {
+                    setCallUI({
+                      type: isVideoCall(payTitle) ? "video" : "voice",
+                      name: payGirl || payTitle,
+                      avatar: payAvatar,
+                    });
+                    setMessage("Connecting call…");
+                  } else {
+                    setMessage("Sent. We will confirm your payment shortly.");
+                  }
                 }}
                 className="w-full bg-pink-600 disabled:opacity-40 py-3.5 rounded-xl font-semibold text-[15px] mb-2"
               >
@@ -4128,18 +4242,17 @@ async function requestService(
                 ₦{Number(unlockTarget.price).toLocaleString()}
               </p>
               <ol className="text-[13px] text-gray-300 space-y-1.5 mb-3 list-decimal list-inside">
-                <li>Pay exactly ₦{Number(unlockTarget.price).toLocaleString()} on Flutterwave</li>
+                <li>Pay exactly ₦{Number(unlockTarget.price).toLocaleString()} via OPay</li>
                 <li>Upload screenshot of successful payment</li>
                 <li>Tap I have sent — unlock after admin confirms</li>
               </ol>
-              <a
-                href={resolvePaymentLink("private", Number(unlockTarget.price), "private") || LINK_PRIVATE}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block w-full text-center bg-orange-500 text-black py-3 rounded-xl font-bold text-[14px] mb-3"
-              >
-                Pay with Flutterwave
-              </a>
+              <div className="bg-zinc-900 border border-green-700/40 rounded-xl p-3 mb-3 text-sm">
+                <p className="font-bold">{OPAY_DISPLAY_NAME}</p>
+                <p className="text-gray-300">{OPAY_BANK} · {OPAY_ACCOUNT}</p>
+                <p className="text-pink-400 font-semibold mt-1">
+                  Transfer ₦{Number(unlockTarget.price).toLocaleString()}
+                </p>
+              </div>
               <label className="block w-full border border-dashed border-zinc-600 rounded-xl p-3 text-center cursor-pointer mb-3">
                 <input
                   type="file"
@@ -4335,6 +4448,50 @@ async function requestService(
               <p className="text-[11px] text-gray-500 text-center mt-3">
                 Gift opens payment — complete transfer to send
               </p>
+            </div>
+          </div>
+        )}
+
+
+        {/* Fake call animation — until real girls online */}
+        {callUI && (
+          <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center text-white">
+            <div className="absolute inset-0 bg-gradient-to-b from-pink-950/40 to-black" />
+            <div className="relative z-10 flex flex-col items-center px-6">
+              {callUI.type === "video" && callUI.avatar ? (
+                <img
+                  src={callUI.avatar}
+                  className="w-28 h-28 rounded-full object-cover ring-4 ring-pink-500/50 mb-4 animate-pulse"
+                  alt=""
+                />
+              ) : (
+                <div className="w-28 h-28 rounded-full bg-zinc-800 flex items-center justify-center text-4xl mb-4 ring-4 ring-pink-500/40 animate-pulse">
+                  {callUI.type === "video" ? "📹" : "📞"}
+                </div>
+              )}
+              <p className="text-[18px] font-semibold mb-1">{callUI.name}</p>
+              <p className="text-[14px] text-pink-300 mb-2">
+                {callUI.type === "video" ? "Video calling…" : "Calling…"}
+              </p>
+              <div className="flex gap-2 mb-8">
+                <span className="w-2 h-2 rounded-full bg-pink-500 animate-bounce" />
+                <span className="w-2 h-2 rounded-full bg-pink-500 animate-bounce [animation-delay:150ms]" />
+                <span className="w-2 h-2 rounded-full bg-pink-500 animate-bounce [animation-delay:300ms]" />
+              </div>
+              <p className="text-[13px] text-gray-400 text-center mb-6 max-w-xs">
+                Ringing… If she doesn&apos;t pick up, try again later or book another time.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setCallUI(null);
+                  setMessage("No answer — she may be busy. Try again later.");
+                }}
+                className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center text-2xl shadow-lg"
+              >
+                📵
+              </button>
+              <p className="text-[12px] text-gray-500 mt-3">End call</p>
             </div>
           </div>
         )}
