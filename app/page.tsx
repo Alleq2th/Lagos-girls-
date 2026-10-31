@@ -28,12 +28,13 @@ const GIFT_CATALOG = [
 const OPAY_ACCOUNT = "9010693322";
 const OPAY_BANK = "OPay";
 const OPAY_DISPLAY_NAME = "Lagos Girls Admin";
+const OPAY_ACCOUNT_NAME = "Bassey Emem Edet";
 
 const DEFAULT_PAYMENT_TEXT = `Pay to: Lagos Girls Admin
 
 Bank: OPay
 Account: 9010693322
-Name: Lagos Girls Admin
+Name: Bassey Emem Edet
 
 Transfer the EXACT amount shown.
 Then upload your payment screenshot below.`;
@@ -126,6 +127,9 @@ export default function Home() {
   const [conversations, setConversations] = useState<any[]>([]);
   const [currentChat, setCurrentChat] = useState<any>(null);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [chatHasMore, setChatHasMore] = useState(false);
+  const [chatLoadingOlder, setChatLoadingOlder] = useState(false);
+  const CHAT_PAGE_SIZE = 40;
   const [newMessage, setNewMessage] = useState("");
   const [userSearch, setUserSearch] = useState("");
   const [searchResults, setSearchResults] = useState<Profile[]>([]);
@@ -529,6 +533,20 @@ export default function Home() {
 
   
   useEffect(() => {
+    if (view !== "feed" || !feedHasMore) return;
+    const el = feedSentinelRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) loadMorePosts();
+      },
+      { rootMargin: "240px" }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [view, feedHasMore, feedPage, posts.length]);
+
+  useEffect(() => {
     if (!callUI) return;
     const tmr = setTimeout(() => {
       setCallUI(null);
@@ -628,6 +646,7 @@ export default function Home() {
   const avatarRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const feedSentinelRef = useRef<HTMLDivElement>(null);
   const feedLoadedRef = useRef(false);
   const bootViewSetRef = useRef(false);
   const swipeStartX = useRef(0);
@@ -1315,12 +1334,44 @@ async function requestService(
   }
 
   async function loadChatMessages(conversationId: string) {
-    const { data } = await supabase
+    // Latest page only (scale)
+    const { data, error } = await supabase
       .from("messages")
-      .select(`*, sender:profiles(username, display_name, avatar_url)`)
+      .select(`id, content, sender_id, created_at, conversation_id`)
       .eq("conversation_id", conversationId)
-      .order("created_at", { ascending: true });
-    setChatMessages(data || []);
+      .order("created_at", { ascending: false })
+      .limit(CHAT_PAGE_SIZE);
+    if (error) {
+      console.error(error);
+      setChatMessages([]);
+      return;
+    }
+    const batch = (data || []).reverse();
+    setChatHasMore((data || []).length >= CHAT_PAGE_SIZE);
+    setChatMessages(batch);
+  }
+
+  async function loadOlderChatMessages() {
+    if (!currentChat?.id || chatLoadingOlder || !chatHasMore || !chatMessages.length)
+      return;
+    setChatLoadingOlder(true);
+    try {
+      const oldest = chatMessages[0]?.created_at;
+      const { data } = await supabase
+        .from("messages")
+        .select(`id, content, sender_id, created_at, conversation_id`)
+        .eq("conversation_id", currentChat.id)
+        .lt("created_at", oldest)
+        .order("created_at", { ascending: false })
+        .limit(CHAT_PAGE_SIZE);
+      const older = (data || []).reverse();
+      setChatHasMore((data || []).length >= CHAT_PAGE_SIZE);
+      if (older.length) {
+        setChatMessages((prev) => [...older, ...prev]);
+      }
+    } finally {
+      setChatLoadingOlder(false);
+    }
   }
 
   async function sendMessageText(text: string, chat: any) {
@@ -2266,7 +2317,7 @@ async function requestService(
                     <div className="flex items-center gap-2.5" onClick={() => { setActiveStory(null); openUserProfile(activeStory.user_id); }}>
                       <div className="w-8 h-8 rounded-full bg-zinc-800 overflow-hidden ring-2 ring-pink-500/60">
                         {activeStory.profiles?.avatar_url ? (
-                          <img src={activeStory.profiles.avatar_url} className="w-full h-full object-cover" alt="" />
+                          <img src={activeStory.profiles.avatar_url} className="w-full h-full object-cover" alt=""  loading="lazy" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-xs font-bold">
                             {activeStory.profiles?.username?.[0]?.toUpperCase()}
@@ -2303,7 +2354,7 @@ async function requestService(
                         src={activeStory.media_url}
                         className="max-h-full max-w-full object-contain"
                         alt=""
-                      />
+                       loading="lazy" />
                     )}
                   </div>
 
@@ -2388,7 +2439,7 @@ async function requestService(
                     >
                       <div className="w-[38px] h-[38px] rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-sm font-bold ring-1 ring-zinc-700">
                         {post.profiles?.avatar_url ? (
-                          <img src={post.profiles.avatar_url} className="w-full h-full object-cover" alt="" />
+                          <img src={post.profiles.avatar_url} className="w-full h-full object-cover" alt=""  loading="lazy" />
                         ) : (
                           post.profiles?.username?.[0]?.toUpperCase()
                         )}
@@ -2776,7 +2827,7 @@ async function requestService(
                         {isVideo ? (
                           <video src={src} className="w-full h-full object-cover" muted playsInline />
                         ) : (
-                          <img src={src} className="w-full h-full object-cover" alt="" />
+                          <img src={src} className="w-full h-full object-cover" alt=""  loading="lazy" />
                         )}
                         {isVideo && (
                           <span className="absolute bottom-1 right-1 text-[10px] bg-black/70 px-1.5 py-0.5 rounded text-white">
@@ -2849,7 +2900,7 @@ async function requestService(
                     >
                       <div className="w-11 h-11 rounded-full bg-zinc-800 overflow-hidden shrink-0">
                         {u.avatar_url ? (
-                          <img src={u.avatar_url} className="w-full h-full object-cover" alt="" />
+                          <img src={u.avatar_url} className="w-full h-full object-cover" alt=""  loading="lazy" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center font-bold text-sm">
                             {(u.username || "?")[0].toUpperCase()}
@@ -2907,7 +2958,7 @@ async function requestService(
                       <div className="relative w-14 h-14 shrink-0">
                         <div className="w-14 h-14 rounded-full bg-zinc-800 overflow-hidden">
                           {other?.avatar_url ? (
-                            <img src={other.avatar_url} className="w-full h-full object-cover" alt="" />
+                            <img src={other.avatar_url} className="w-full h-full object-cover" alt=""  loading="lazy" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center font-bold">
                               {other?.username?.[0]?.toUpperCase()}
@@ -2977,7 +3028,23 @@ async function requestService(
             <div
               ref={chatScrollRef}
               className="flex-1 overflow-y-auto px-4 py-3 space-y-3"
+              onScroll={(e) => {
+                const el = e.currentTarget;
+                if (el.scrollTop < 40) loadOlderChatMessages();
+              }}
             >
+              {chatLoadingOlder && (
+                <p className="text-center text-[11px] text-gray-500">Loading earlier…</p>
+              )}
+              {chatHasMore && !chatLoadingOlder && chatMessages.length > 0 && (
+                <button
+                  type="button"
+                  onClick={loadOlderChatMessages}
+                  className="w-full text-[11px] text-pink-400 py-1"
+                >
+                  Load earlier messages
+                </button>
+              )}
               {chatMessages.length === 0 && (
                 <p className="text-center text-gray-500 text-[13px] mt-10">
                   Say hi — she will reply after you text
@@ -3104,7 +3171,7 @@ async function requestService(
               <div className="flex items-start gap-4">
                 <div className="w-[86px] h-[86px] rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-3xl font-bold ring-2 ring-zinc-700 shrink-0">
                   {profile.avatar_url ? (
-                    <img src={profile.avatar_url} className="w-full h-full object-cover" alt="" />
+                    <img src={profile.avatar_url} className="w-full h-full object-cover" alt=""  loading="lazy" />
                   ) : (
                     (profile.username || "?")[0].toUpperCase()
                   )}
@@ -3315,7 +3382,7 @@ async function requestService(
                           src={thumb?.url || p.media_url}
                           className="w-full h-full object-cover"
                           alt=""
-                        />
+                         loading="lazy" />
                       )}
                       {thumb?.type === "video" && (
                         <span className="absolute bottom-1 left-1 text-[10px] bg-black/70 px-1.5 py-0.5 rounded text-white">
@@ -3360,9 +3427,9 @@ async function requestService(
             <div className="flex flex-col items-center gap-3">
               <div className="w-24 h-24 rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-3xl">
                 {avatarFile ? (
-                  <img src={URL.createObjectURL(avatarFile)} className="w-full h-full object-cover" alt="" />
+                  <img src={URL.createObjectURL(avatarFile)} className="w-full h-full object-cover" alt=""  loading="lazy" />
                 ) : profile?.avatar_url ? (
-                  <img src={profile.avatar_url} className="w-full h-full object-cover" alt="" />
+                  <img src={profile.avatar_url} className="w-full h-full object-cover" alt=""  loading="lazy" />
                 ) : (
                   profile?.username[0].toUpperCase()
                 )}
@@ -3397,7 +3464,7 @@ async function requestService(
                     {thumb?.type === "video" ? (
                       <video src={thumb.url} className="w-full h-full object-cover" muted playsInline />
                     ) : (
-                      <img src={thumb?.url || ""} className="w-full h-full object-cover" alt="" />
+                      <img src={thumb?.url || ""} className="w-full h-full object-cover" alt=""  loading="lazy" />
                     )}
                   </div>
                   );
@@ -3415,7 +3482,7 @@ async function requestService(
               <div className="flex items-start gap-4">
                 <div className="w-[86px] h-[86px] rounded-full bg-zinc-800 overflow-hidden flex items-center justify-center text-3xl font-bold ring-2 ring-zinc-700 shrink-0">
                   {selectedUser.avatar_url ? (
-                    <img src={selectedUser.avatar_url} className="w-full h-full object-cover" alt="" />
+                    <img src={selectedUser.avatar_url} className="w-full h-full object-cover" alt=""  loading="lazy" />
                   ) : (
                     selectedUser.username[0].toUpperCase()
                   )}
@@ -3554,7 +3621,7 @@ async function requestService(
                       {thumb?.type === "video" ? (
                         <video src={thumb.url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
                       ) : (
-                        <img src={thumb?.url || p.media_url} className="w-full h-full object-cover" alt="" />
+                        <img src={thumb?.url || p.media_url} className="w-full h-full object-cover" alt=""  loading="lazy" />
                       )}
                       {thumb?.type === "video" && (
                         <span className="absolute bottom-1 left-1 text-[10px] bg-black/70 px-1.5 py-0.5 rounded text-white">▶</span>
@@ -3610,7 +3677,7 @@ async function requestService(
                             src={first?.url || m.media_url}
                             className={`w-full aspect-[3/4] object-cover ${open ? "" : "blur-md scale-105"}`}
                             alt=""
-                          />
+                           loading="lazy" />
                         )}
                         {isBundle && (
                           <span className="absolute top-2 left-2 text-[10px] bg-black/75 px-2 py-0.5 rounded-full text-white font-medium">
@@ -3684,7 +3751,7 @@ async function requestService(
                             }
                             className="w-full h-full object-cover"
                             alt=""
-                          />
+                           loading="lazy" />
                         )}
                       </div>
                       <p className="font-semibold text-[14px]">@{uname}</p>
@@ -3765,18 +3832,14 @@ async function requestService(
 
         {/* ========== REELS — profile, view profile, like, save, book ========== */}
         
-            {/* Load more — scale */}
+            {/* Infinite scroll sentinel */}
             {view === "feed" && posts.length > 0 && (
               <div className="px-4 py-6 text-center">
+                <div ref={feedSentinelRef} className="h-2" />
                 {feedHasMore ? (
-                  <button
-                    type="button"
-                    onClick={loadMorePosts}
-                    disabled={feedLoadingMore}
-                    className="text-[13px] font-semibold text-pink-400 bg-zinc-900 border border-zinc-800 px-5 py-2.5 rounded-full disabled:opacity-50"
-                  >
-                    {feedLoadingMore ? "Loading…" : "Load more posts"}
-                  </button>
+                  <p className="text-[12px] text-gray-500">
+                    {feedLoadingMore ? "Loading more…" : "Scroll for more"}
+                  </p>
                 ) : (
                   <p className="text-[12px] text-gray-500">You&apos;re all caught up</p>
                 )}
@@ -3850,7 +3913,7 @@ async function requestService(
                                     src={post.profiles.avatar_url}
                                     className="w-full h-full object-cover"
                                     alt=""
-                                  />
+                                   loading="lazy" />
                                 ) : (
                                   <span className="w-full h-full flex items-center justify-center text-sm font-bold">
                                     {(post.profiles?.username || "?")[0]?.toUpperCase()}
@@ -3925,7 +3988,7 @@ async function requestService(
                                   src={post.profiles.avatar_url}
                                   className="w-full h-full object-cover"
                                   alt=""
-                                />
+                                 loading="lazy" />
                               ) : (
                                 <span className="w-full h-full flex items-center justify-center font-bold">
                                   {(post.profiles?.username || "?")[0]?.toUpperCase()}
@@ -4130,7 +4193,7 @@ async function requestService(
                     src={paySheet.girlAvatar}
                     className="w-16 h-16 rounded-full object-cover ring-2 ring-pink-500/60 shrink-0"
                     alt=""
-                  />
+                   loading="lazy" />
                 ) : (
                   <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center text-2xl shrink-0">
                     {paySheet.kind === "gift"
@@ -4193,6 +4256,7 @@ async function requestService(
               <div className="bg-zinc-900 border border-green-700/40 rounded-xl p-3 mb-4">
                 <p className="text-[11px] text-gray-500 mb-1">Transfer to</p>
                 <p className="text-[15px] font-bold text-white">{OPAY_DISPLAY_NAME}</p>
+                <p className="text-[12px] text-gray-400 mt-0.5">{OPAY_ACCOUNT_NAME}</p>
                 <p className="text-[13px] text-gray-300 mt-1">
                   {OPAY_BANK} · <span className="font-mono text-green-400">{OPAY_ACCOUNT}</span>
                 </p>
@@ -4230,7 +4294,7 @@ async function requestService(
                     src={payProofPreview}
                     alt="Payment proof"
                     className="max-h-48 mx-auto rounded-lg object-contain"
-                  />
+                   loading="lazy" />
                 ) : (
                   <span className="text-[13px] text-gray-400">
                     Tap to choose screenshot
@@ -4316,6 +4380,7 @@ async function requestService(
               </ol>
               <div className="bg-zinc-900 border border-green-700/40 rounded-xl p-3 mb-3 text-sm">
                 <p className="font-bold">{OPAY_DISPLAY_NAME}</p>
+                <p className="text-[12px] text-gray-400">{OPAY_ACCOUNT_NAME}</p>
                 <p className="text-gray-300">{OPAY_BANK} · {OPAY_ACCOUNT}</p>
                 <p className="text-pink-400 font-semibold mt-1">
                   Transfer ₦{Number(unlockTarget.price).toLocaleString()}
@@ -4334,7 +4399,7 @@ async function requestService(
                   }}
                 />
                 {payProofPreview ? (
-                  <img src={payProofPreview} className="max-h-40 mx-auto rounded-lg" alt="" />
+                  <img src={payProofPreview} className="max-h-40 mx-auto rounded-lg" alt=""  loading="lazy" />
                 ) : (
                   <span className="text-[13px] text-gray-400">Upload payment screenshot</span>
                 )}
@@ -4427,7 +4492,7 @@ async function requestService(
                   >
                     <div className="w-12 h-12 rounded-full bg-zinc-800 overflow-hidden">
                       {u.avatar_url ? (
-                        <img src={u.avatar_url} className="w-full h-full object-cover" alt="" />
+                        <img src={u.avatar_url} className="w-full h-full object-cover" alt=""  loading="lazy" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center font-bold">
                           {(u.username || "?")[0].toUpperCase()}
@@ -4458,7 +4523,7 @@ async function requestService(
                     {thumb?.type === "video" ? (
                       <video src={thumb.url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
                     ) : (
-                      <img src={thumb?.url || ""} className="w-full h-full object-cover" alt="" />
+                      <img src={thumb?.url || ""} className="w-full h-full object-cover" alt=""  loading="lazy" />
                     )}
                     {multi && (
                       <span className="absolute top-1 right-1 text-[10px] bg-black/70 text-white px-1 rounded">⧉</span>
@@ -4531,7 +4596,7 @@ async function requestService(
                   src={callUI.avatar}
                   className="w-28 h-28 rounded-full object-cover ring-4 ring-pink-500/50 mb-4 animate-pulse"
                   alt=""
-                />
+                 loading="lazy" />
               ) : (
                 <div className="w-28 h-28 rounded-full bg-zinc-800 flex items-center justify-center text-4xl mb-4 ring-4 ring-pink-500/40 animate-pulse">
                   {callUI.type === "video" ? "📹" : "📞"}
@@ -4627,7 +4692,7 @@ async function requestService(
                 } bg-zinc-800`}
               >
                 {profile?.avatar_url ? (
-                  <img src={profile.avatar_url} className="w-full h-full object-cover" alt="" />
+                  <img src={profile.avatar_url} className="w-full h-full object-cover" alt=""  loading="lazy" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-[10px]">
                     {(profile?.username || "?")[0].toUpperCase()}
