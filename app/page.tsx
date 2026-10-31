@@ -99,6 +99,10 @@ export default function Home() {
     | "chat"
   >("age");
   const [posts, setPosts] = useState<any[]>([]);
+  const [feedPage, setFeedPage] = useState(0);
+  const [feedHasMore, setFeedHasMore] = useState(true);
+  const [feedLoadingMore, setFeedLoadingMore] = useState(false);
+  const FEED_PAGE_SIZE = 15;
   const [stories, setStories] = useState<any[]>([]);
   const [appEvents, setAppEvents] = useState(DEFAULT_EVENTS);
   const [eventSlide, setEventSlide] = useState(0);
@@ -885,81 +889,115 @@ export default function Home() {
     if (data) setStories(shuffleArray(data));
   }
 
-  async function loadPosts() {
-    setFeedLoading(true);
+  async function enrichPosts(data: any[]) {
+    if (!data.length) return [];
+    const ids = data.map((p: any) => p.id);
+    const [likesRes, myLikesRes, mySavesRes] = await Promise.all([
+      supabase.from("likes").select("post_id").in("post_id", ids),
+      session?.user?.id
+        ? supabase
+            .from("likes")
+            .select("post_id")
+            .in("post_id", ids)
+            .eq("user_id", session.user.id)
+        : Promise.resolve({ data: [] as any[] }),
+      session?.user?.id
+        ? supabase
+            .from("saves")
+            .select("post_id")
+            .in("post_id", ids)
+            .eq("user_id", session.user.id)
+        : Promise.resolve({ data: [] as any[] }),
+    ]);
+    const countMap: Record<string, number> = {};
+    (likesRes.data || []).forEach((r: any) => {
+      countMap[r.post_id] = (countMap[r.post_id] || 0) + 1;
+    });
+    const myLikeSet = new Set((myLikesRes.data || []).map((r: any) => r.post_id));
+    const mySaveSet = new Set((mySavesRes.data || []).map((r: any) => r.post_id));
+    return data.map((post: any) => {
+      const real = countMap[post.id] || 0;
+      const boost = Number(post.likes_boost) || 0;
+      return {
+        ...post,
+        likes_count: real + boost,
+        liked_by_me: myLikeSet.has(post.id),
+        saved_by_me: mySaveSet.has(post.id),
+        comments_count:
+          (Number(post.comments_count) || 0) + (Number(post.comments_boost) || 0),
+      };
+    });
+  }
+
+  async function loadPosts(reset = true) {
+    if (reset) {
+      setFeedLoading(true);
+      setFeedPage(0);
+    } else {
+      setFeedLoadingMore(true);
+    }
     try {
+      const page = reset ? 0 : feedPage + 1;
+      const from = page * FEED_PAGE_SIZE;
+      const to = from + FEED_PAGE_SIZE - 1;
       const { data } = await supabase
         .from("posts")
-        .select(`*, profiles (id, username, display_name, avatar_url, role, location, services)`)
+        .select(
+          `id, user_id, media_url, media_urls, media_type, caption, is_private, price, likes_boost, comments_boost, comments_count, created_at, profiles (id, username, display_name, avatar_url, role, location)`
+        )
         .order("created_at", { ascending: false })
-        .limit(40);
+        .range(from, to);
 
-      if (data && data.length > 0) {
-        const ids = data.map((p: any) => p.id);
-        // Batch likes/saves instead of 3 requests per post (major lag fix)
-        const [likesRes, myLikesRes, mySavesRes] = await Promise.all([
-          supabase.from("likes").select("post_id").in("post_id", ids),
-          session?.user?.id
-            ? supabase
-                .from("likes")
-                .select("post_id")
-                .in("post_id", ids)
-                .eq("user_id", session.user.id)
-            : Promise.resolve({ data: [] as any[] }),
-          session?.user?.id
-            ? supabase
-                .from("saves")
-                .select("post_id")
-                .in("post_id", ids)
-                .eq("user_id", session.user.id)
-            : Promise.resolve({ data: [] as any[] }),
-        ]);
+      const batch = data || [];
+      setFeedHasMore(batch.length >= FEED_PAGE_SIZE);
+      setFeedPage(page);
 
-        const countMap: Record<string, number> = {};
-        (likesRes.data || []).forEach((r: any) => {
-          countMap[r.post_id] = (countMap[r.post_id] || 0) + 1;
-        });
-        const myLikeSet = new Set((myLikesRes.data || []).map((r: any) => r.post_id));
-        const mySaveSet = new Set((mySavesRes.data || []).map((r: any) => r.post_id));
-
-        const postsWithStats = data.map((post: any) => {
-          const real = countMap[post.id] || 0;
-          const boost = Number(post.likes_boost) || 0;
-          return {
-            ...post,
-            likes_count: real + boost,
-            liked_by_me: myLikeSet.has(post.id),
-            saved_by_me: mySaveSet.has(post.id),
-            comments_count:
-              (Number(post.comments_count) || 0) +
-              (Number(post.comments_boost) || 0),
-          };
-        });
-        setPosts(smartFeedSort(postsWithStats));
-      } else if (!feedLoadedRef.current) {
+      if (batch.length > 0) {
+        const postsWithStats = await enrichPosts(batch);
+        if (reset) {
+          setPosts(smartFeedSort(postsWithStats));
+        } else {
+          setPosts((prev) => {
+            const seen = new Set(prev.map((p) => p.id));
+            const merged = [...prev];
+            for (const p of postsWithStats) {
+              if (!seen.has(p.id)) merged.push(p);
+            }
+            return merged;
+          });
+        }
+      } else if (reset && !feedLoadedRef.current) {
         setPosts([]);
       }
     } finally {
       setFeedLoading(false);
+      setFeedLoadingMore(false);
     }
+  }
+
+  async function loadMorePosts() {
+    if (!feedHasMore || feedLoadingMore || feedLoading) return;
+    await loadPosts(false);
   }
 
   async function loadMyPosts() {
     if (!session) return;
     const { data } = await supabase
       .from("posts")
-      .select("*")
+      .select("id, media_url, media_urls, media_type, caption, is_private, price, created_at, likes_boost, comments_count")
       .eq("user_id", session.user.id)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(60);
     setMyPosts(data || []);
   }
 
   async function loadComments(postId: string) {
     const { data } = await supabase
       .from("comments")
-      .select(`*, profiles (username, display_name, avatar_url)`)
+      .select(`id, body, created_at, user_id, profiles (username, display_name, avatar_url)`)
       .eq("post_id", postId)
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: true })
+      .limit(40);
     setComments((prev) => ({ ...prev, [postId]: data || [] }));
   }
 
@@ -3715,6 +3753,25 @@ async function requestService(
         )}
 
         {/* ========== REELS — profile, view profile, like, save, book ========== */}
+        
+            {/* Load more — scale */}
+            {view === "feed" && posts.length > 0 && (
+              <div className="px-4 py-6 text-center">
+                {feedHasMore ? (
+                  <button
+                    type="button"
+                    onClick={loadMorePosts}
+                    disabled={feedLoadingMore}
+                    className="text-[13px] font-semibold text-pink-400 bg-zinc-900 border border-zinc-800 px-5 py-2.5 rounded-full disabled:opacity-50"
+                  >
+                    {feedLoadingMore ? "Loading…" : "Load more posts"}
+                  </button>
+                ) : (
+                  <p className="text-[12px] text-gray-500">You&apos;re all caught up</p>
+                )}
+              </div>
+            )}
+
         {view === "reels" && (
           <div className="fixed inset-0 z-30 bg-black overflow-y-scroll snap-y snap-mandatory">
             {posts.filter((p) => p.media_type === "video").length === 0 ? (
