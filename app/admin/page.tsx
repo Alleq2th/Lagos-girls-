@@ -167,11 +167,19 @@ export default function AdminPage() {
   }, [selectedAccount]);
 
   async function loadAccounts() {
-    const { data } = await supabase
+    // select * so missing optional columns never wipe the whole list
+    const { data, error } = await supabase
       .from("profiles")
-      .select("id, username, display_name, role, avatar_url, is_premium, is_banned, services, followers_count, account_source, referrer_id, created_at")
-      .order("created_at", { ascending: false });
-    if (data) setAccounts(data);
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      console.error("loadAccounts", error);
+      setMessage("Accounts load failed: " + error.message);
+      setAccounts([]);
+      return;
+    }
+    setAccounts(data || []);
   }
 
   async function loadStats() {
@@ -1983,6 +1991,14 @@ export default function AdminPage() {
             )}
 
             <div className="space-y-2">
+              <p className="text-[11px] text-gray-500 px-1">
+                {accounts.length} accounts · {filtered.length} shown
+              </p>
+              {filtered.length === 0 && (
+                <p className="text-center text-gray-500 text-sm py-8">
+                  No accounts found. Create one above, or tap Refresh.
+                </p>
+              )}
               {filtered.map((acc) => (
                 <div
                   key={acc.id}
