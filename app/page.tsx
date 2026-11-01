@@ -47,6 +47,29 @@ function isVideoCall(title: string) {
   return /video call|face call/i.test(title || "");
 }
 
+function parsePostMedia(post: any): {
+  teaser: string;
+  full: string | null;
+  isLeak: boolean;
+} {
+  const raw = post?.media_url || "";
+  try {
+    const j = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (j && j.leak && j.teaser) {
+      return { teaser: j.teaser, full: j.full || null, isLeak: true };
+    }
+  } catch {}
+  const isLeak = String(post?.caption || "").startsWith("__leak__");
+  return { teaser: raw, full: null, isLeak };
+}
+
+function leakCaption(cap: string) {
+  return String(cap || "")
+    .replace(/^__leak__\n?/, "")
+    .replace(/^__anon__\n?/, "");
+}
+
+
 
 const DEFAULT_EVENTS = [
   {
@@ -3854,13 +3877,19 @@ async function requestService(
               </div>
             ) : (
               posts
-                .filter((p) => p.media_type === "video")
+                .filter((p) => p.media_type === "video" || parsePostMedia(p).isLeak)
                 .map((post) => {
                   const paused = !!reelPaused[post.id];
+                  const media = parsePostMedia(post);
                   const isAnon = String(post.caption || "").startsWith("__anon__");
-                  const captionText = isAnon
-                    ? String(post.caption || "").replace(/^__anon__\n?/, "")
-                    : post.caption;
+                  const isLeak = media.isLeak || String(post.caption || "").startsWith("__leak__");
+                  const unlocked =
+                    !isLeak ||
+                    unlockedIds.includes(post.id) ||
+                    unlockedIds.includes(String(post.id));
+                  const videoSrc =
+                    isLeak && unlocked && media.full ? media.full : media.teaser;
+                  const captionText = leakCaption(post.caption || "");
                   return (
                     <div
                       key={post.id}
@@ -3868,7 +3897,7 @@ async function requestService(
                     >
                       <div className="relative h-full w-full max-w-[min(100%,calc(100dvh*9/16))] mx-auto bg-black">
                         <video
-                          src={post.media_url}
+                          src={videoSrc}
                           className="absolute inset-0 w-full h-full object-cover"
                           loop
                           playsInline
@@ -3929,12 +3958,43 @@ async function requestService(
                               </button>
                             </div>
                           )}
-                          {isAnon && (
+                          {isAnon && !isLeak && (
                             <p className="text-[12px] text-gray-300 mb-1 font-medium">Free video</p>
+                          )}
+                          {isLeak && (
+                            <p className="text-[11px] font-bold text-pink-400 mb-1 tracking-wide">
+                              LEAK · teaser
+                            </p>
                           )}
                           {captionText && (
                             <p className="text-[13px] text-white/95 line-clamp-3 mb-2 drop-shadow">
                               {captionText}
+                            </p>
+                          )}
+                          {isLeak && !unlocked && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                openPaySheet(
+                                  `Full leak video`,
+                                  Number(post.price) || 2000,
+                                  "Pay for full leak video, upload screenshot",
+                                  {
+                                    kind: "private",
+                                    girlName: "Leak",
+                                    mediaId: post.id,
+                                  }
+                                );
+                              }}
+                              className="mt-1 w-full max-w-[240px] bg-pink-600 hover:bg-pink-500 py-3 rounded-xl font-bold text-[14px] shadow-lg"
+                            >
+                              Buy full video · ₦
+                              {Number(post.price || 2000).toLocaleString()}
+                            </button>
+                          )}
+                          {isLeak && unlocked && (
+                            <p className="text-[12px] text-green-400 font-semibold mt-1">
+                              Full video unlocked
                             </p>
                           )}
                           {!isAnon && post.user_id !== session?.user?.id && (
