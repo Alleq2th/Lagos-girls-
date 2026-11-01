@@ -160,6 +160,7 @@ export default function Home() {
   const [callModal, setCallModal] = useState<null | "voice" | "video">(null);
   const [pendingChatMessage, setPendingChatMessage] = useState<string | null>(null);
   const lastTapRef = useRef<{ id: string; t: number } | null>(null);
+  const [reelTab, setReelTab] = useState<"girls" | "leaks">("girls");
   const [reelPaused, setReelPaused] = useState<Record<string, boolean>>({});
   const [paySheet, setPaySheet] = useState<null | {
     title: string;
@@ -3871,14 +3872,52 @@ async function requestService(
 
         {view === "reels" && (
           <div className="fixed inset-0 z-30 bg-black overflow-y-scroll snap-y snap-mandatory">
-            {posts.filter((p) => p.media_type === "video").length === 0 ? (
-              <div className="h-full flex items-center justify-center text-gray-500 text-[14px] px-6 text-center">
-                No videos yet. Post a video to see it here.
+            {/* Girls | Leaks tabs */}
+            <div className="fixed top-0 left-0 right-0 z-50 pt-[env(safe-area-inset-top)] bg-gradient-to-b from-black/90 to-transparent">
+              <div className="max-w-lg mx-auto flex items-center justify-center gap-6 py-3">
+                <button
+                  type="button"
+                  onClick={() => setReelTab("girls")}
+                  className={`text-[15px] font-semibold pb-1 border-b-2 ${
+                    reelTab === "girls"
+                      ? "text-white border-white"
+                      : "text-gray-500 border-transparent"
+                  }`}
+                >
+                  Girls
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReelTab("leaks")}
+                  className={`text-[15px] font-semibold pb-1 border-b-2 ${
+                    reelTab === "leaks"
+                      ? "text-pink-400 border-pink-400"
+                      : "text-gray-500 border-transparent"
+                  }`}
+                >
+                  Leaks
+                </button>
               </div>
-            ) : (
-              posts
-                .filter((p) => p.media_type === "video" || parsePostMedia(p).isLeak)
-                .map((post) => {
+            </div>
+            {(() => {
+              const reelPosts = smartFeedSort(
+                posts.filter((p) => {
+                  const leak = parsePostMedia(p).isLeak || String(p.caption || "").startsWith("__leak__");
+                  if (reelTab === "leaks") return leak;
+                  // Girls: videos that are NOT leaks
+                  return p.media_type === "video" && !leak;
+                })
+              );
+              if (reelPosts.length === 0) {
+                return (
+                  <div className="h-full flex items-center justify-center text-gray-500 text-[14px] px-6 text-center">
+                    {reelTab === "leaks"
+                      ? "No leaks yet. Post leaks from Admin."
+                      : "No girl videos yet."}
+                  </div>
+                );
+              }
+              return reelPosts.map((post) => {
                   const paused = !!reelPaused[post.id];
                   const media = parsePostMedia(post);
                   const isAnon = String(post.caption || "").startsWith("__anon__");
@@ -3903,10 +3942,16 @@ async function requestService(
                           playsInline
                           muted
                           autoPlay
+                          preload="auto"
+                          webkit-playsinline="true"
                           ref={(el) => {
                             if (!el) return;
+                            el.setAttribute("playsinline", "true");
                             if (paused) el.pause();
-                            else el.play().catch(() => {});
+                            else {
+                              const p = el.play();
+                              if (p) p.catch(() => {});
+                            }
                           }}
                           onClick={() =>
                             setReelPaused((prev) => ({
@@ -4141,8 +4186,8 @@ async function requestService(
                       </div>
                     </div>
                   );
-                })
-            )}
+                });
+            })()}
           </div>
         )}
 
