@@ -1986,30 +1986,97 @@ export default function AdminPage() {
               </div>
             </div>
 
-            {/* Bulk free videos — no account open required */}
-            <div className="bg-zinc-900 border border-pink-500/30 rounded-2xl p-4 mb-4">
-              <h3 className="font-bold text-sm mb-1">Free videos (anonymous)</h3>
+            {/* LEAKS — teaser free, full paid */}
+            <div className="bg-zinc-900 border border-pink-500/40 rounded-2xl p-4 mb-4">
+              <h3 className="font-bold text-sm mb-1 text-pink-400">Post a LEAK</h3>
               <p className="text-xs text-gray-500 mb-3">
-                Multi-select 30–40 videos. No username on feed. Needs ≥1 girl account
-                as storage host only.
+                Teaser plays free on Reels → Leaks tab. User pays for full video.
+                Needs ≥1 girl account as storage host only.
               </p>
-              <input
-                type="file"
-                accept="video/*,image/*"
-                multiple
-                className="block w-full text-xs text-gray-400 mb-2"
-                onChange={handleFileSelect}
+              <textarea
+                placeholder="Caption (e.g. Lagos party leak…)"
+                value={caption}
+                onChange={(e) => setCaption(e.target.value)}
+                rows={2}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm mb-2 resize-none"
               />
-              {files.length > 0 && (
-                <p className="text-xs text-pink-400 mb-2">{files.length} file(s) selected</p>
+              <label className="block text-xs text-gray-400 mb-2">
+                Teaser video (free preview)
+                <input
+                  type="file"
+                  accept="video/*"
+                  className="block w-full mt-1 text-xs"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    setFiles(f ? [f] : []);
+                  }}
+                />
+              </label>
+              <label className="block text-xs text-gray-400 mb-2">
+                Full video (paid)
+                <input
+                  type="file"
+                  accept="video/*"
+                  className="block w-full mt-1 text-xs"
+                  onChange={(e) => setFullLeakFile(e.target.files?.[0] || null)}
+                />
+              </label>
+              {fullLeakFile && (
+                <p className="text-[11px] text-green-400 mb-2">Full: {fullLeakFile.name}</p>
               )}
+              <label className="block text-xs text-gray-400 mb-3">
+                Price for full video (₦)
+                <input
+                  type="number"
+                  value={price}
+                  onChange={(e) => setPrice(Number(e.target.value) || 0)}
+                  className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                />
+              </label>
               <button
                 type="button"
-                onClick={handleBulkFreeVideos}
-                disabled={loading || files.length === 0}
+                onClick={async () => {
+                  if (!files[0]) return setMessage("Pick teaser video");
+                  if (!fullLeakFile) return setMessage("Pick full video");
+                  const host =
+                    selectedAccount ||
+                    accounts.find((a) => a.role === "GIRL") ||
+                    accounts[0];
+                  if (!host?.id)
+                    return setMessage("Create at least one girl account first");
+                  setLoading(true);
+                  setMessage("");
+                  try {
+                    setMessage("Uploading teaser…");
+                    const teaserUrl = await uploadFile(files[0]);
+                    setMessage("Uploading full video…");
+                    const fullUrl = await uploadFile(fullLeakFile);
+                    const payload = JSON.stringify({
+                      leak: true,
+                      teaser: teaserUrl,
+                      full: fullUrl,
+                    });
+                    await supabase.from("posts").insert({
+                      user_id: host.id,
+                      media_url: payload,
+                      media_type: "video",
+                      caption: `__leak__\n${caption || ""}`.trim(),
+                      is_private: true,
+                      price: Number(price) || 2000,
+                    } as any);
+                    setMessage(`Leak live · full ₦${price}`);
+                    setCaption("");
+                    setFiles([]);
+                    setFullLeakFile(null);
+                  } catch (e: any) {
+                    setMessage(e.message || "Leak upload failed");
+                  }
+                  setLoading(false);
+                }}
+                disabled={loading}
                 className="w-full bg-pink-600 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
               >
-                {loading ? "Uploading…" : `Post ${files.length || ""} free video(s)`}
+                {loading ? "Uploading…" : "Post leak"}
               </button>
             </div>
 
