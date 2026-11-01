@@ -56,7 +56,8 @@ export default function AdminPage() {
   const [caption, setCaption] = useState("");
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState(2000);
-  const [postType, setPostType] = useState<"public" | "private" | "story" | "free_anon">("public");
+  const [postType, setPostType] = useState<"public" | "private" | "story" | "free_anon" | "leak">("public");
+  const [fullLeakFile, setFullLeakFile] = useState<File | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
 
@@ -507,6 +508,23 @@ export default function AdminPage() {
               title: title || "Private",
               price,
             });
+          } else if (postType === "leak") {
+            if (!fullLeakFile) throw new Error("Pick the FULL video file too");
+            setMessage("Uploading full video…");
+            const fullUrl = await uploadFile(fullLeakFile);
+            const payload = JSON.stringify({
+              leak: true,
+              teaser: url,
+              full: fullUrl,
+            });
+            await supabase.from("posts").insert({
+              user_id: selectedAccount.id,
+              media_url: payload,
+              media_type: "video",
+              caption: `__leak__\n${caption || ""}`.trim(),
+              is_private: true,
+              price: Number(price) || 2000,
+            } as any);
           } else if (postType === "free_anon") {
             await supabase.from("posts").insert({
               user_id: selectedAccount.id,
@@ -524,12 +542,15 @@ export default function AdminPage() {
           }
         }
         setMessage(
-          postType === "free_anon"
+          postType === "leak"
+            ? `Leak posted · full video ₦${price}`
+            : postType === "free_anon"
             ? `${files.length} free anonymous video(s) uploaded`
             : postType === "story"
             ? `${files.length} story item(s) added`
             : "Posted"
         );
+        if (postType === "leak") setFullLeakFile(null);
       }
       setCaption("");
       setTitle("");
@@ -1238,6 +1259,7 @@ export default function AdminPage() {
                   ["private", "Private ₦"],
                   ["story", "Story"],
                   ["free_anon", "Free videos"],
+                  ["leak", "Leak (paid full)"],
                 ] as const
               ).map(([t, label]) => (
                 <button
@@ -1257,6 +1279,41 @@ export default function AdminPage() {
                 <span className="text-pink-400">Free video</span> with no username on
                 feed/reels. Pick any account — name is hidden.
               </p>
+            )}
+            {postType === "leak" && (
+              <div className="mb-3 space-y-2 border border-pink-500/40 rounded-xl p-3">
+                <p className="text-xs text-pink-400 font-medium">
+                  LEAK: choose teaser below (plays free). Full video is paid.
+                </p>
+                <textarea
+                  placeholder="Caption e.g. Lagos hospital leak part 1..."
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                  rows={2}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm resize-none"
+                />
+                <label className="block text-xs text-gray-400">
+                  Full video (required)
+                  <input
+                    type="file"
+                    accept="video/*"
+                    className="block w-full mt-1 text-xs"
+                    onChange={(e) => setFullLeakFile(e.target.files?.[0] || null)}
+                  />
+                </label>
+                {fullLeakFile && (
+                  <p className="text-[11px] text-green-400">{fullLeakFile.name}</p>
+                )}
+                <label className="block text-xs text-gray-400">
+                  Price for full video (₦)
+                  <input
+                    type="number"
+                    value={price}
+                    onChange={(e) => setPrice(Number(e.target.value) || 0)}
+                    className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                  />
+                </label>
+              </div>
             )}
             {(postType === "public" || postType === "free_anon") && (
               <textarea
