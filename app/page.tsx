@@ -30,14 +30,63 @@ const OPAY_BANK = "OPay";
 const OPAY_DISPLAY_NAME = "Lagos Girls Admin";
 const OPAY_ACCOUNT_NAME = "Bassey Emem Edet";
 
+/** Trust Wallet receive addresses — send ONLY the matching network */
+const CRYPTO_WALLETS = [
+  {
+    id: "trc20",
+    coin: "USDT",
+    network: "TRC20 (Tron)",
+    address: "TQgcBFQzTPxjVywgVdbfdnDicouWbPi8Zj",
+    warn: "USDT on Tron only. Not ERC20 / BEP20.",
+  },
+  {
+    id: "bep20",
+    coin: "USDT / BNB",
+    network: "BEP20 (BNB Smart Chain)",
+    address: "0x5E2060422E5F3b74FBd118270A6974Cd27524da6",
+    warn: "BSC network only. Not Ethereum mainnet.",
+  },
+  {
+    id: "erc20",
+    coin: "USDT / ETH",
+    network: "ERC20 (Ethereum)",
+    address: "0x5E2060422E5F3b74FBd118270A6974Cd27524da6",
+    warn: "Ethereum mainnet only. High gas fees.",
+  },
+  {
+    id: "sol",
+    coin: "SOL / USDT",
+    network: "Solana",
+    address: "GMnGeWnGvNB9beMm2t3R6cs5x4A7W9P53udtAUbsVzu",
+    warn: "Solana network only.",
+  },
+  {
+    id: "btc",
+    coin: "BTC",
+    network: "Bitcoin",
+    address: "bc1qymzfr85z4tf9srnjmpweu4fkdm2hd98w2t8rfw",
+    warn: "Bitcoin only. Not USDT or other coins.",
+  },
+] as const;
+
+const CRYPTO_DISCLAIMER =
+  "Send only the listed coin on the listed network to that exact address. Wrong network or wrong coin = funds lost forever. Lagos Girls is not responsible for user transfer mistakes.";
+
 const DEFAULT_PAYMENT_TEXT = `Pay to: Lagos Girls Admin
 
-Bank: OPay
+Option 1 — OPay
 Account: 9010693322
 Name: Bassey Emem Edet
 
-Transfer the EXACT amount shown.
-Then upload your payment screenshot below.`;
+Option 2 — Crypto (match coin + network exactly)
+TRC20 USDT: TQgcBFQzTPxjVywgVdbfdnDicouWbPi8Zj
+BEP20: 0x5E2060422E5F3b74FBd118270A6974Cd27524da6
+ERC20: 0x5E2060422E5F3b74FBd118270A6974Cd27524da6
+Solana: GMnGeWnGvNB9beMm2t3R6cs5x4A7W9P53udtAUbsVzu
+Bitcoin: bc1qymzfr85z4tf9srnjmpweu4fkdm2hd98w2t8rfw
+Wrong network = lost funds. Not our responsibility.
+
+Transfer the amount shown, then upload screenshot.`;
 
 function isCallService(title: string) {
   return /video call|voice call|face call/i.test(title || "");
@@ -4358,7 +4407,8 @@ async function requestService(
 
               <ol className="text-[13px] text-gray-300 space-y-2 mb-3 list-decimal list-inside">
                 <li>
-                  Open <span className="text-green-400 font-semibold">OPay</span> and transfer
+                  Pay via <span className="text-green-400 font-semibold">OPay</span> or{" "}
+                  <span className="text-amber-400 font-semibold">USDT TRC20</span>
                 </li>
                 <li>
                   Pay exactly{" "}
@@ -4370,25 +4420,65 @@ async function requestService(
                 <li>Upload screenshot and tap I have sent</li>
               </ol>
 
-              <div className="bg-zinc-900 border border-green-700/40 rounded-xl p-3 mb-4">
-                <p className="text-[11px] text-gray-500 mb-1">Transfer to</p>
-                <p className="text-[15px] font-bold text-white">{OPAY_DISPLAY_NAME}</p>
-                <p className="text-[12px] text-gray-400 mt-0.5">{OPAY_ACCOUNT_NAME}</p>
-                <p className="text-[13px] text-gray-300 mt-1">
-                  {OPAY_BANK} · <span className="font-mono text-green-400">{OPAY_ACCOUNT}</span>
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      navigator.clipboard.writeText(OPAY_ACCOUNT);
-                      setMessage("Account number copied");
-                    } catch {}
-                  }}
-                  className="mt-2 text-[11px] text-pink-400 font-semibold"
-                >
-                  Copy account number
-                </button>
+              <div className="space-y-3 mb-4">
+                <div className="bg-zinc-900 border border-green-700/40 rounded-xl p-3">
+                  <p className="text-[11px] text-gray-500 mb-1">Option 1 · OPay</p>
+                  <p className="text-[15px] font-bold text-white">{OPAY_DISPLAY_NAME}</p>
+                  <p className="text-[12px] text-gray-400 mt-0.5">{OPAY_ACCOUNT_NAME}</p>
+                  <p className="text-[13px] text-gray-300 mt-1">
+                    {OPAY_BANK} ·{" "}
+                    <span className="font-mono text-green-400">{OPAY_ACCOUNT}</span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        navigator.clipboard.writeText(OPAY_ACCOUNT);
+                        setMessage("OPay account copied");
+                      } catch {}
+                    }}
+                    className="mt-2 text-[11px] text-pink-400 font-semibold"
+                  >
+                    Copy OPay account
+                  </button>
+                </div>
+                <div className="bg-zinc-900 border border-amber-600/40 rounded-xl p-3">
+                  <p className="text-[11px] text-gray-500 mb-1">Option 2 · Crypto</p>
+                  <p className="text-[10px] text-red-400 leading-snug mb-2">
+                    {CRYPTO_DISCLAIMER}
+                  </p>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {CRYPTO_WALLETS.map((w) => (
+                      <div
+                        key={w.id}
+                        className="border border-zinc-700 rounded-lg p-2"
+                      >
+                        <p className="text-[12px] font-bold text-amber-400">
+                          {w.coin}{" "}
+                          <span className="text-gray-400 font-normal">
+                            · {w.network}
+                          </span>
+                        </p>
+                        <p className="text-[10px] text-red-400/90 mt-0.5">{w.warn}</p>
+                        <p className="text-[11px] font-mono text-gray-200 mt-1 break-all">
+                          {w.address}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            try {
+                              navigator.clipboard.writeText(w.address);
+                              setMessage(`${w.coin} ${w.network} address copied`);
+                            } catch {}
+                          }}
+                          className="mt-1 text-[10px] text-amber-400 font-semibold"
+                        >
+                          Copy this address only
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               <p className="text-[12px] text-gray-400 mb-2 font-medium">
@@ -4495,13 +4585,26 @@ async function requestService(
                 <li>Upload screenshot of successful payment</li>
                 <li>Tap I have sent — unlock after admin confirms</li>
               </ol>
-              <div className="bg-zinc-900 border border-green-700/40 rounded-xl p-3 mb-3 text-sm">
+              <div className="bg-zinc-900 border border-green-700/40 rounded-xl p-3 mb-2 text-sm">
+                <p className="text-[11px] text-gray-500">Option 1 · OPay</p>
                 <p className="font-bold">{OPAY_DISPLAY_NAME}</p>
                 <p className="text-[12px] text-gray-400">{OPAY_ACCOUNT_NAME}</p>
                 <p className="text-gray-300">{OPAY_BANK} · {OPAY_ACCOUNT}</p>
                 <p className="text-pink-400 font-semibold mt-1">
-                  Transfer ₦{Number(unlockTarget.price).toLocaleString()}
+                  ₦{Number(unlockTarget.price).toLocaleString()}
                 </p>
+              </div>
+              <div className="bg-zinc-900 border border-amber-600/40 rounded-xl p-3 mb-3 text-sm">
+                <p className="text-[11px] text-gray-500 mb-1">Option 2 · Crypto</p>
+                <p className="text-[10px] text-red-400 mb-2">{CRYPTO_DISCLAIMER}</p>
+                {CRYPTO_WALLETS.map((w) => (
+                  <div key={w.id} className="mb-2 last:mb-0">
+                    <p className="text-[11px] font-semibold text-amber-400">
+                      {w.coin} · {w.network}
+                    </p>
+                    <p className="font-mono text-[10px] text-gray-300 break-all">{w.address}</p>
+                  </div>
+                ))}
               </div>
               <label className="block w-full border border-dashed border-zinc-600 rounded-xl p-3 text-center cursor-pointer mb-3">
                 <input
