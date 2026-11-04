@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import { smartFeedSort, shuffleArray } from "../lib/algorithm";
+import { smartFeedSort, shuffleArray, orderFullFeed } from "../lib/algorithm";
 import {
   getPersonality,
   getPersonalityTraits,
@@ -61,6 +61,16 @@ function parsePostMedia(post: any): {
   } catch {}
   const isLeak = String(post?.caption || "").startsWith("__leak__");
   return { teaser: raw, full: null, isLeak };
+}
+
+function feedUserKey(session: any) {
+  return session?.user?.id || "anon";
+}
+
+function orderPostsFor(posts: any[], feedType: "home" | "reels", session: any, followingIds: string[]) {
+  return orderFullFeed(posts, feedType, feedUserKey(session), {
+    followingIds: followingIds || [],
+  });
 }
 
 function leakCaption(cap: string) {
@@ -1006,7 +1016,7 @@ export default function Home() {
       if (batch.length > 0) {
         const postsWithStats = await enrichPosts(batch);
         if (reset) {
-          setPosts(smartFeedSort(postsWithStats));
+          setPosts(orderPostsFor(postsWithStats, "home", session, followingIds));
         } else {
           setPosts((prev) => {
             const seen = new Set(prev.map((p) => p.id));
@@ -3900,13 +3910,15 @@ async function requestService(
               </div>
             </div>
             {(() => {
-              const reelPosts = smartFeedSort(
+              const reelPosts = orderPostsFor(
                 posts.filter((p) => {
                   const leak = parsePostMedia(p).isLeak || String(p.caption || "").startsWith("__leak__");
                   if (reelTab === "leaks") return leak;
-                  // Girls: videos that are NOT leaks
                   return p.media_type === "video" && !leak;
-                })
+                }),
+                "reels",
+                session,
+                followingIds
               );
               if (reelPosts.length === 0) {
                 return (
