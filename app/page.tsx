@@ -102,14 +102,19 @@ function parsePostMedia(post: any): {
   isLeak: boolean;
 } {
   const raw = post?.media_url || "";
+  const cap = String(post?.caption || "");
+  const captionLeak = cap.includes("__leak__");
   try {
     const j = typeof raw === "string" ? JSON.parse(raw) : raw;
-    if (j && j.leak && j.teaser) {
-      return { teaser: j.teaser, full: j.full || null, isLeak: true };
+    if (j && (j.leak || captionLeak) && (j.teaser || j.full)) {
+      return {
+        teaser: j.teaser || j.full || raw,
+        full: j.full || null,
+        isLeak: true,
+      };
     }
   } catch {}
-  const isLeak = String(post?.caption || "").startsWith("__leak__");
-  return { teaser: raw, full: null, isLeak };
+  return { teaser: typeof raw === "string" ? raw : "", full: null, isLeak: captionLeak };
 }
 
 function feedUserKey(session: any) {
@@ -630,6 +635,12 @@ export default function Home() {
   }, [view, feedHasMore, feedPage, posts.length]);
 
   useEffect(() => {
+    if (view === "reels") {
+      loadLeaks();
+    }
+  }, [view, reelTab]);
+
+  useEffect(() => {
     if (!callUI) return;
     const tmr = setTimeout(() => {
       setCallUI(null);
@@ -1092,6 +1103,34 @@ export default function Home() {
     if (!feedHasMore || feedLoadingMore || feedLoading) return;
     await loadPosts(false);
   }
+
+  /** Dedicated leak fetch — not limited to first feed page */
+  async function loadLeaks() {
+    try {
+      const { data, error } = await supabase
+        .from("posts")
+        .select(
+          `*, profiles (id, username, display_name, avatar_url, role, location, services)`
+        )
+        .ilike("caption", "%__leak__%")
+        .order("created_at", { ascending: false })
+        .limit(80);
+      if (error) {
+        console.error("loadLeaks", error);
+        return;
+      }
+      if (!data?.length) return;
+      const enriched = await enrichPosts(data);
+      setPosts((prev) => {
+        const byId = new Map(prev.map((p) => [p.id, p]));
+        for (const p of enriched) byId.set(p.id, p);
+        return Array.from(byId.values());
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
 
   async function loadMyPosts() {
     if (!session) return;
@@ -3961,8 +4000,12 @@ async function requestService(
             {(() => {
               const reelPosts = orderPostsFor(
                 posts.filter((p) => {
-                  const leak = parsePostMedia(p).isLeak || String(p.caption || "").startsWith("__leak__");
-                  if (reelTab === "leaks") return leak;
+                  const leak =
+                    parsePostMedia(p).isLeak ||
+                    String(p.caption || "").includes("__leak__") ||
+                    (typeof p.media_url === "string" &&
+                      p.media_url.includes('"leak"'));
+                  if (reelTab === "leaks") return !!leak;
                   return p.media_type === "video" && !leak;
                 }),
                 "reels",
