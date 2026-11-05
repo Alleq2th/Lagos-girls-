@@ -517,14 +517,20 @@ export default function AdminPage() {
               teaser: url,
               full: fullUrl,
             });
-            await supabase.from("posts").insert({
+            const leakRow: any = {
               user_id: selectedAccount.id,
               media_url: payload,
               media_type: "video",
               caption: `__leak__\n${caption || ""}`.trim(),
-              is_private: true,
               price: Number(price) || 2000,
-            } as any);
+            };
+            let { error: leakErr } = await supabase.from("posts").insert(leakRow);
+            if (leakErr) {
+              delete leakRow.price;
+              const r2 = await supabase.from("posts").insert(leakRow);
+              leakErr = r2.error;
+            }
+            if (leakErr) throw new Error(leakErr.message);
           } else if (postType === "free_anon") {
             await supabase.from("posts").insert({
               user_id: selectedAccount.id,
@@ -2056,15 +2062,22 @@ export default function AdminPage() {
                       teaser: teaserUrl,
                       full: fullUrl,
                     });
-                    await supabase.from("posts").insert({
+                    const leakRow: any = {
                       user_id: host.id,
                       media_url: payload,
                       media_type: "video",
                       caption: `__leak__\n${caption || ""}`.trim(),
-                      is_private: true,
                       price: Number(price) || 2000,
-                    } as any);
-                    setMessage(`Leak live · full ₦${price}`);
+                    };
+                    let { error: leakErr } = await supabase.from("posts").insert(leakRow);
+                    if (leakErr) {
+                      // retry without price if column missing
+                      delete leakRow.price;
+                      const r2 = await supabase.from("posts").insert(leakRow);
+                      leakErr = r2.error;
+                    }
+                    if (leakErr) throw new Error(leakErr.message);
+                    setMessage(`Leak live · full ₦${price}. Open app → Reels → Leaks`);
                     setCaption("");
                     setFiles([]);
                     setFullLeakFile(null);
