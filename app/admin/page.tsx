@@ -58,6 +58,9 @@ export default function AdminPage() {
   const [price, setPrice] = useState(2000);
   const [postType, setPostType] = useState<"public" | "private" | "story" | "free_anon" | "leak">("public");
   const [fullLeakFile, setFullLeakFile] = useState<File | null>(null);
+  const [fullLeakFiles, setFullLeakFiles] = useState<File[]>([]);
+  const [teaserPreviews, setTeaserPreviews] = useState<string[]>([]);
+  const [fullPreviews, setFullPreviews] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
 
@@ -1992,12 +1995,12 @@ export default function AdminPage() {
               </div>
             </div>
 
-            {/* LEAKS — teaser free, full paid */}
+            {/* LEAKS — teaser free, full paid — photo / video / carousel */}
             <div className="bg-zinc-900 border border-pink-500/40 rounded-2xl p-4 mb-4">
               <h3 className="font-bold text-sm mb-1 text-pink-400">Post a LEAK</h3>
               <p className="text-xs text-gray-500 mb-3">
-                Teaser plays free on Reels → Leaks tab. User pays for full video.
-                Needs ≥1 girl account as storage host only.
+                Teaser is free on Reels → Leaks only. Pay to unlock full.
+                Photo, video, or carousel. Needs ≥1 girl as storage host.
               </p>
               <textarea
                 placeholder="Caption (e.g. Lagos party leak…)"
@@ -2006,32 +2009,63 @@ export default function AdminPage() {
                 rows={2}
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm mb-2 resize-none"
               />
-              <label className="block text-xs text-gray-400 mb-2">
-                Teaser video (free preview)
+              <label className="block text-xs text-gray-400 mb-1">
+                Teaser (free) — one or many photos/videos
                 <input
                   type="file"
-                  accept="video/*"
+                  accept="image/*,video/*"
+                  multiple
                   className="block w-full mt-1 text-xs"
                   onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    setFiles(f ? [f] : []);
+                    const list = Array.from(e.target.files || []);
+                    setFiles(list);
+                    setTeaserPreviews(list.map((f) => URL.createObjectURL(f)));
                   }}
                 />
               </label>
-              <label className="block text-xs text-gray-400 mb-2">
-                Full video (paid)
+              {teaserPreviews.length > 0 && (
+                <div className="flex gap-2 overflow-x-auto py-2 mb-2">
+                  {teaserPreviews.map((src, i) => (
+                    <div key={i} className="w-20 h-28 rounded-lg overflow-hidden bg-black shrink-0 border border-zinc-700">
+                      {files[i]?.type?.startsWith("video") ? (
+                        <video src={src} className="w-full h-full object-cover" muted playsInline />
+                      ) : (
+                        <img src={src} className="w-full h-full object-cover" alt="" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <label className="block text-xs text-gray-400 mb-1">
+                Full content (paid) — one or many photos/videos
                 <input
                   type="file"
-                  accept="video/*"
+                  accept="image/*,video/*"
+                  multiple
                   className="block w-full mt-1 text-xs"
-                  onChange={(e) => setFullLeakFile(e.target.files?.[0] || null)}
+                  onChange={(e) => {
+                    const list = Array.from(e.target.files || []);
+                    setFullLeakFiles(list);
+                    setFullLeakFile(list[0] || null);
+                    setFullPreviews(list.map((f) => URL.createObjectURL(f)));
+                  }}
                 />
               </label>
-              {fullLeakFile && (
-                <p className="text-[11px] text-green-400 mb-2">Full: {fullLeakFile.name}</p>
+              {fullPreviews.length > 0 && (
+                <div className="flex gap-2 overflow-x-auto py-2 mb-2">
+                  {fullPreviews.map((src, i) => (
+                    <div key={i} className="w-20 h-28 rounded-lg overflow-hidden bg-black shrink-0 border border-pink-700/50">
+                      {fullLeakFiles[i]?.type?.startsWith("video") ? (
+                        <video src={src} className="w-full h-full object-cover" muted playsInline />
+                      ) : (
+                        <img src={src} className="w-full h-full object-cover" alt="" />
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
               <label className="block text-xs text-gray-400 mb-3">
-                Price for full video (₦)
+                Price for full content (₦)
                 <input
                   type="number"
                   value={price}
@@ -2042,8 +2076,9 @@ export default function AdminPage() {
               <button
                 type="button"
                 onClick={async () => {
-                  if (!files[0]) return setMessage("Pick teaser video");
-                  if (!fullLeakFile) return setMessage("Pick full video");
+                  if (!files.length) return setMessage("Pick teaser file(s)");
+                  const fulls = fullLeakFiles.length ? fullLeakFiles : fullLeakFile ? [fullLeakFile] : [];
+                  if (!fulls.length) return setMessage("Pick full content file(s)");
                   const host =
                     selectedAccount ||
                     accounts.find((a) => a.role === "GIRL") ||
@@ -2053,34 +2088,53 @@ export default function AdminPage() {
                   setLoading(true);
                   setMessage("");
                   try {
-                    setMessage("Uploading teaser…");
-                    const teaserUrl = await uploadFile(files[0]);
-                    setMessage("Uploading full video…");
-                    const fullUrl = await uploadFile(fullLeakFile);
+                    const teaserUrls: string[] = [];
+                    for (let i = 0; i < files.length; i++) {
+                      setMessage(`Teaser ${i + 1}/${files.length}…`);
+                      teaserUrls.push(await uploadFile(files[i]));
+                    }
+                    const fullUrls: string[] = [];
+                    for (let i = 0; i < fulls.length; i++) {
+                      setMessage(`Full ${i + 1}/${fulls.length}…`);
+                      fullUrls.push(await uploadFile(fulls[i]));
+                    }
+                    const firstType = files[0].type.startsWith("video") ? "video" : "image";
                     const payload = JSON.stringify({
                       leak: true,
-                      teaser: teaserUrl,
-                      full: fullUrl,
+                      teaser: teaserUrls[0],
+                      full: fullUrls[0],
+                      teasers: teaserUrls,
+                      fulls: fullUrls,
+                      teaserTypes: files.map((f) =>
+                        f.type.startsWith("video") ? "video" : "image"
+                      ),
+                      fullTypes: fulls.map((f) =>
+                        f.type.startsWith("video") ? "video" : "image"
+                      ),
                     });
                     const leakRow: any = {
                       user_id: host.id,
                       media_url: payload,
-                      media_type: "video",
+                      media_type: firstType,
                       caption: `__leak__\n${caption || ""}`.trim(),
                       price: Number(price) || 2000,
                     };
                     let { error: leakErr } = await supabase.from("posts").insert(leakRow);
                     if (leakErr) {
-                      // retry without price if column missing
                       delete leakRow.price;
                       const r2 = await supabase.from("posts").insert(leakRow);
                       leakErr = r2.error;
                     }
                     if (leakErr) throw new Error(leakErr.message);
-                    setMessage(`Leak live · full ₦${price}. Open app → Reels → Leaks`);
+                    setMessage(
+                      `Leak live · ${teaserUrls.length} teaser · ${fullUrls.length} full · ₦${price}`
+                    );
                     setCaption("");
                     setFiles([]);
                     setFullLeakFile(null);
+                    setFullLeakFiles([]);
+                    setTeaserPreviews([]);
+                    setFullPreviews([]);
                   } catch (e: any) {
                     setMessage(e.message || "Leak upload failed");
                   }
