@@ -145,10 +145,22 @@ function orderPostsFor(posts: any[], feedType: "home" | "reels", session: any, f
   });
 }
 
+function isLeakPost(post: any) {
+  if (!post) return false;
+  if (String(post.caption || "").includes("__leak__")) return true;
+  try {
+    const j = typeof post.media_url === "string" ? JSON.parse(post.media_url) : post.media_url;
+    if (j && j.leak) return true;
+  } catch {}
+  return false;
+}
+
 function leakCaption(cap: string) {
   return String(cap || "")
-    .replace(/^__leak__\n?/, "")
-    .replace(/^__anon__\n?/, "");
+    .replace(/__leak__/g, "")
+    .replace(/__anon__/g, "")
+    .replace(/^\n+/, "")
+    .trim();
 }
 
 
@@ -1158,7 +1170,7 @@ export default function Home() {
       .eq("user_id", session.user.id)
       .order("created_at", { ascending: false })
       .limit(60);
-    setMyPosts(data || []);
+    setMyPosts((data || []).filter((p: any) => !isLeakPost(p)));
   }
 
   async function loadComments(postId: string) {
@@ -1215,7 +1227,8 @@ export default function Home() {
     const { data: postsData } = await supabase.from("posts").select("*").eq("user_id", userId).order("created_at", { ascending: false });
     const { data: privateData } = await supabase.from("private_media").select("*").eq("user_id", userId).order("created_at", { ascending: false });
 
-    setUserPosts(postsData || []);
+    // Leaks are anonymous — never show on a girl/guy profile grid
+    setUserPosts((postsData || []).filter((p: any) => !isLeakPost(p)));
     setUserPrivate(privateData || []);
     setView("user");
   }
@@ -2554,7 +2567,7 @@ async function requestService(
               </div>
             ) : (
               posts.map((post) => {
-                const isAnon = String(post.caption || "").startsWith("__anon__");
+                const isAnon = String(post.caption || "").includes("__anon__") || String(post.caption || "").includes("__leak__") || parsePostMedia(post).isLeak;
                 const displayCaption = isAnon
                   ? String(post.caption || "").replace(/^__anon__\n?/, "")
                   : post.caption;
@@ -2740,7 +2753,7 @@ async function requestService(
 
                   <div className="px-3.5 pb-1">
                     {post.user_id !== session?.user?.id &&
-                      !String(post.caption || "").startsWith("__anon__") && (
+                      !String(post.caption || "").includes("__anon__") || String(post.caption || "").includes("__leak__") || parsePostMedia(post).isLeak && (
                       <button
                         type="button"
                         onClick={() =>
@@ -2766,7 +2779,7 @@ async function requestService(
 
                   {/* Big View profile · Book if services */}
                   {post.user_id !== session?.user?.id &&
-                    !String(post.caption || "").startsWith("__anon__") && (
+                    !String(post.caption || "").includes("__anon__") || String(post.caption || "").includes("__leak__") || parsePostMedia(post).isLeak && (
                     <div className="px-3.5 mt-2.5 mb-1 flex flex-col gap-2">
                       {(() => {
                         let hasSvc = false;
@@ -3493,7 +3506,7 @@ async function requestService(
                 </div>
               ) : (
                 <div className="grid grid-cols-3 gap-[2px]">
-                  {myPosts.map((p) => {
+                  {myPosts.filter((p) => !isLeakPost(p)).map((p) => {
                     const items = parsePrivateItems(p.media_url, p.media_type);
                     const thumb = items[0];
                     const multi = items.length > 1;
@@ -4043,8 +4056,8 @@ async function requestService(
               return reelPosts.map((post) => {
                   const paused = !!reelPaused[post.id];
                   const media = parsePostMedia(post);
-                  const isAnon = String(post.caption || "").startsWith("__anon__");
-                  const isLeak = media.isLeak || String(post.caption || "").startsWith("__leak__");
+                  const isLeak = media.isLeak || String(post.caption || "").includes("__leak__");
+                  const isAnon = isLeak || String(post.caption || "").includes("__anon__");
                   const unlocked =
                     !isLeak ||
                     unlockedIds.includes(post.id) ||
