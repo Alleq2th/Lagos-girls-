@@ -1,7 +1,6 @@
 /**
  * Lagos Girls recommendation engine — Phase 1
  * Home feed + Reels: creator rotation, no-repeat cycles, cooldowns.
- * Designed so Phase 2+ (interests, Redis) can plug in without rewrite.
  */
 
 export type FeedType = "home" | "reels";
@@ -76,19 +75,17 @@ export function saveFeedState(
   } catch {}
 }
 
-/** Score a post for ranking within rotation (Phase 1 heuristics). */
 export function scorePost(
   post: any,
   opts?: {
     followingIds?: Set<string>;
-    likedBoost?: boolean;
   }
 ): number {
   const likes = Number(post.likes_count) || 0;
   const comments = Number(post.comments_count) || 0;
   const ageMs = Date.now() - new Date(post.created_at || 0).getTime();
   const ageHours = Math.max(0, ageMs / (1000 * 60 * 60));
-  const freshness = Math.max(0, 72 - ageHours) / 72; // 0–1, decays over 3 days
+  const freshness = Math.max(0, 72 - ageHours) / 72;
 
   let score =
     likes * 2 +
@@ -98,10 +95,9 @@ export function scorePost(
 
   const creatorId = String(post.user_id || "");
   if (opts?.followingIds?.has(creatorId)) {
-    score += 8; // hybrid: followed get a boost, not a monopoly
+    score += 8;
   }
 
-  // Tiny stable jitter so equal scores don't stick in id order forever
   const idHash = String(post.id || "")
     .split("")
     .reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -123,13 +119,6 @@ function toCandidates(
   }));
 }
 
-/**
- * Build ordered feed with:
- * - No post twice in the same cycle
- * - Creator rotation (one creator per "slot" until pool allows)
- * - Creator cooldown (stronger on reels)
- * - New cycle when unseen content is exhausted (reshuffled order)
- */
 export function buildFeedBatch(
   posts: any[],
   state: FeedState,
@@ -138,7 +127,7 @@ export function buildFeedBatch(
   opts?: { followingIds?: string[] }
 ): { ordered: any[]; state: FeedState } {
   const followingIds = new Set(opts?.followingIds || []);
-  let candidates = toCandidates(posts, { followingIds });
+  const candidates = toCandidates(posts, { followingIds });
   let working: FeedState = {
     ...state,
     seenPostIds: [...state.seenPostIds],
@@ -148,7 +137,6 @@ export function buildFeedBatch(
   const seen = new Set(working.seenPostIds);
   let unseen = candidates.filter((c) => !seen.has(c.postId));
 
-  // Start a new cycle if everything was already shown
   if (unseen.length === 0 && candidates.length > 0) {
     working = {
       cycleId: newCycleId(),
@@ -159,7 +147,6 @@ export function buildFeedBatch(
     unseen = candidates;
   }
 
-  // Adaptive cooldown: reels prefer more space between same creator
   const uniqueCreators = new Set(unseen.map((c) => c.creatorId)).size;
   let cooldown =
     feedType === "reels"
@@ -172,13 +159,10 @@ export function buildFeedBatch(
         ? 1
         : 0;
 
-  // Rank unseen by score
   const ranked = [...unseen].sort((a, b) => b.score - a.score);
-
   const batch: FeedCandidate[] = [];
   const creatorsInBatch = new Set<string>();
 
-  // Round-robin pass: prefer creators not yet in this batch / recent window
   const tryPick = (list: FeedCandidate[], strictCooldown: boolean) => {
     for (const post of list) {
       if (batch.length >= batchSize) break;
@@ -195,16 +179,12 @@ export function buildFeedBatch(
   };
 
   tryPick(ranked, true);
-
-  // Fallback: relax cooldown if batch still short (small catalog)
   if (batch.length < batchSize) {
     tryPick(
       ranked.filter((c) => !batch.some((b) => b.postId === c.postId)),
       false
     );
   }
-
-  // Still short: fill with remaining unseen ignoring creator uniqueness in batch
   if (batch.length < batchSize) {
     for (const post of ranked) {
       if (batch.length >= batchSize) break;
@@ -221,10 +201,6 @@ export function buildFeedBatch(
   };
 }
 
-/**
- * Full ordered list for current cycle (client-side Phase 1).
- * Call when posts load; persist returned state.
- */
 export function orderFullFeed(
   posts: any[],
   feedType: FeedType,
@@ -235,11 +211,8 @@ export function orderFullFeed(
 
   let state = loadFeedState(feedType, userKey);
   const allIds = new Set(posts.map((p) => String(p.id)));
-
-  // Drop seen ids that no longer exist
   state.seenPostIds = state.seenPostIds.filter((id) => allIds.has(id));
 
-  // If almost everything seen, start fresh cycle
   const unseenCount = posts.filter(
     (p) => !state.seenPostIds.includes(String(p.id))
   ).length;
@@ -268,9 +241,7 @@ export function orderFullFeed(
     for (const p of ordered) {
       if (!result.some((r) => r.id === p.id)) result.push(p);
     }
-    // Prevent infinite loop if batch empty
     if (ordered.length === 0) {
-      // force new cycle
       state = {
         cycleId: newCycleId(),
         seenPostIds: [],
@@ -291,13 +262,52 @@ export function orderFullFeed(
   return result;
 }
 
-/** @deprecated use orderFullFeed — kept for imports */
 export function diversifyByAccount(posts: any[]): any[] {
   return orderFullFeed(posts, "home", "anon");
 }
 
-/** @deprecated use orderFullFeed */
 export function smartFeedSort(posts: any[]) {
   return orderFullFeed(posts, "home", "anon");
-                                  }
-    
+}
+
+/**
+ * Mix leaks into the home feed so they don't dominate.
+ * Default: up to 1 leak after every `everyN` normal posts (default 3).
+ */
+export function mixLeaksIntoFeed(posts: any[], everyN = 3): any[] {
+  if (!posts?.length) return [];
+
+  const isLeak = (p: any) => {
+    if (!p) return false;
+    if (String(p.caption || "").includes("__leak__")) return true;
+    try {
+      const j =
+        typeof p.media_url === "string" ? JSON.parse(p.media_url) : p.media_url;
+      if (j && j.leak) return true;
+    } catch {}
+    return false;
+  };
+
+  const normals = posts.filter((p) => !isLeak(p));
+  const leaks = posts.filter((p) => isLeak(p));
+
+  if (!leaks.length) return normals;
+  if (!normals.length) return leaks.slice(0, 3); // never dump only leaks
+
+  const out: any[] = [];
+  let li = 0;
+  for (let i = 0; i < normals.length; i++) {
+    out.push(normals[i]);
+    // After everyN normal posts, insert one leak if available
+    if ((i + 1) % everyN === 0 && li < leaks.length) {
+      out.push(leaks[li++]);
+    }
+  }
+  // Leftover leaks: sprinkle one every everyN at end, max a few
+  let extra = 0;
+  while (li < leaks.length && extra < 5) {
+    out.push(leaks[li++]);
+    extra++;
+  }
+  return out;
+}
