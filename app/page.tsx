@@ -100,21 +100,39 @@ function parsePostMedia(post: any): {
   teaser: string;
   full: string | null;
   isLeak: boolean;
+  teasers: string[];
+  fulls: string[];
+  teaserTypes: string[];
+  fullTypes: string[];
 } {
   const raw = post?.media_url || "";
   const cap = String(post?.caption || "");
   const captionLeak = cap.includes("__leak__");
   try {
     const j = typeof raw === "string" ? JSON.parse(raw) : raw;
-    if (j && (j.leak || captionLeak) && (j.teaser || j.full)) {
+    if (j && (j.leak || captionLeak) && (j.teaser || j.full || j.teasers)) {
+      const teasers = (j.teasers && j.teasers.length ? j.teasers : [j.teaser]).filter(Boolean);
+      const fulls = (j.fulls && j.fulls.length ? j.fulls : [j.full]).filter(Boolean);
       return {
-        teaser: j.teaser || j.full || raw,
-        full: j.full || null,
+        teaser: teasers[0] || j.teaser || "",
+        full: fulls[0] || j.full || null,
         isLeak: true,
+        teasers,
+        fulls,
+        teaserTypes: j.teaserTypes || teasers.map(() => "video"),
+        fullTypes: j.fullTypes || fulls.map(() => "video"),
       };
     }
   } catch {}
-  return { teaser: typeof raw === "string" ? raw : "", full: null, isLeak: captionLeak };
+  return {
+    teaser: typeof raw === "string" ? raw : "",
+    full: null,
+    isLeak: captionLeak,
+    teasers: typeof raw === "string" && raw ? [raw] : [],
+    fulls: [],
+    teaserTypes: ["video"],
+    fullTypes: [],
+  };
 }
 
 function feedUserKey(session: any) {
@@ -4006,6 +4024,7 @@ async function requestService(
                     (typeof p.media_url === "string" &&
                       p.media_url.includes('"leak"'));
                   if (reelTab === "leaks") return !!leak;
+                  // Girls tab: normal videos only, never leaks
                   return p.media_type === "video" && !leak;
                 }),
                 "reels",
@@ -4030,8 +4049,22 @@ async function requestService(
                     !isLeak ||
                     unlockedIds.includes(post.id) ||
                     unlockedIds.includes(String(post.id));
-                  const videoSrc =
-                    isLeak && unlocked && media.full ? media.full : media.teaser;
+                  const showUrls =
+                    isLeak && unlocked && media.fulls?.length
+                      ? media.fulls
+                      : isLeak && unlocked && media.full
+                        ? [media.full]
+                        : media.teasers?.length
+                          ? media.teasers
+                          : [media.teaser];
+                  const showTypes =
+                    isLeak && unlocked && media.fullTypes?.length
+                      ? media.fullTypes
+                      : media.teaserTypes?.length
+                        ? media.teaserTypes
+                        : showUrls.map(() =>
+                            post.media_type === "image" ? "image" : "video"
+                          );
                   const captionText = leakCaption(post.caption || "");
                   return (
                     <div
@@ -4039,31 +4072,56 @@ async function requestService(
                       className="h-[100dvh] w-full snap-start relative flex items-center justify-center bg-black"
                     >
                       <div className="relative h-full w-full max-w-[min(100%,calc(100dvh*9/16))] mx-auto bg-black">
-                        <video
-                          src={videoSrc}
-                          className="absolute inset-0 w-full h-full object-cover"
-                          loop
-                          playsInline
-                          muted
-                          autoPlay
-                          preload="auto"
-                          webkit-playsinline="true"
-                          ref={(el) => {
-                            if (!el) return;
-                            el.setAttribute("playsinline", "true");
-                            if (paused) el.pause();
-                            else {
-                              const p = el.play();
-                              if (p) p.catch(() => {});
-                            }
-                          }}
-                          onClick={() =>
-                            setReelPaused((prev) => ({
-                              ...prev,
-                              [post.id]: !prev[post.id],
-                            }))
-                          }
-                        />
+                        <div className="absolute inset-0 flex overflow-x-auto snap-x snap-mandatory no-scrollbar">
+                          {showUrls.map((src, idx) => (
+                            <div
+                              key={idx}
+                              className="min-w-full h-full snap-center relative shrink-0"
+                            >
+                              {showTypes[idx] === "image" ||
+                              (!showTypes[idx]?.includes("video") &&
+                                /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(src)) ? (
+                                <img
+                                  src={src}
+                                  className="absolute inset-0 w-full h-full object-cover"
+                                  alt=""
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <video
+                                  src={src}
+                                  className="absolute inset-0 w-full h-full object-cover"
+                                  loop
+                                  playsInline
+                                  muted
+                                  autoPlay
+                                  preload="auto"
+                                  ref={(el) => {
+                                    if (!el) return;
+                                    if (paused) el.pause();
+                                    else el.play().catch(() => {});
+                                  }}
+                                  onClick={() =>
+                                    setReelPaused((prev) => ({
+                                      ...prev,
+                                      [post.id]: !prev[post.id],
+                                    }))
+                                  }
+                                />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {showUrls.length > 1 && (
+                          <div className="absolute top-14 left-0 right-0 flex justify-center gap-1 z-20">
+                            {showUrls.map((_, i) => (
+                              <span
+                                key={i}
+                                className="h-0.5 flex-1 max-w-[40px] rounded bg-white/40"
+                              />
+                            ))}
+                          </div>
+                        )}
                         {paused && (
                           <button
                             className="absolute inset-0 flex items-center justify-center z-10"
@@ -4112,7 +4170,7 @@ async function requestService(
                           )}
                           {isLeak && (
                             <p className="text-[11px] font-bold text-pink-400 mb-1 tracking-wide">
-                              LEAK · teaser
+                              LEAK · preview
                             </p>
                           )}
                           {captionText && (
@@ -4137,13 +4195,13 @@ async function requestService(
                               }}
                               className="mt-1 w-full max-w-[240px] bg-pink-600 hover:bg-pink-500 py-3 rounded-xl font-bold text-[14px] shadow-lg"
                             >
-                              Buy full video · ₦
+                              Buy full content · ₦
                               {Number(post.price || 2000).toLocaleString()}
                             </button>
                           )}
                           {isLeak && unlocked && (
                             <p className="text-[12px] text-green-400 font-semibold mt-1">
-                              Full video unlocked
+                              Full content unlocked
                             </p>
                           )}
                           {!isAnon && post.user_id !== session?.user?.id && (
