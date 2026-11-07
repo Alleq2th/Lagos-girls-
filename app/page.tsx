@@ -2567,15 +2567,40 @@ async function requestService(
               </div>
             ) : (
               posts.map((post) => {
-                const isAnon = String(post.caption || "").includes("__anon__") || String(post.caption || "").includes("__leak__") || parsePostMedia(post).isLeak;
-                const displayCaption = isAnon
-                  ? String(post.caption || "").replace(/^__anon__\n?/, "")
-                  : post.caption;
+                const leakMedia = parsePostMedia(post);
+                const isLeak = leakMedia.isLeak || String(post.caption || "").includes("__leak__");
+                const isAnon =
+                  isLeak ||
+                  String(post.caption || "").includes("__anon__");
+                const displayCaption = isLeak
+                  ? leakCaption(post.caption || "")
+                  : isAnon
+                    ? String(post.caption || "")
+                        .replace(/__anon__/g, "")
+                        .replace(/__leak__/g, "")
+                        .trim()
+                    : post.caption;
+                const leakUnlocked =
+                  !isLeak ||
+                  unlockedIds.includes(post.id) ||
+                  unlockedIds.includes(String(post.id));
                 return (
                 <article key={post.id} className="border-b border-zinc-900 pb-3">
                   {/* Header */}
                   <div className="flex items-center justify-between px-3 py-2">
-                    {isAnon ? (
+                    {isLeak ? (
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-[38px] h-[38px] rounded-full bg-pink-600/20 flex items-center justify-center text-sm ring-1 ring-pink-500">
+                          🔥
+                        </div>
+                        <div>
+                          <p className="font-bold text-[13.5px] leading-tight text-pink-400">LEAK</p>
+                          <p className="text-[11px] text-gray-400 leading-tight">
+                            {leakUnlocked ? "Full content unlocked" : "Preview · pay for full"}
+                          </p>
+                        </div>
+                      </div>
+                    ) : isAnon ? (
                       <div className="flex items-center gap-2.5">
                         <div className="w-[38px] h-[38px] rounded-full bg-zinc-800 flex items-center justify-center text-sm ring-1 ring-zinc-700">
                           ▶
@@ -2605,7 +2630,7 @@ async function requestService(
                       </div>
                     </div>
                     )}
-                    {!isAnon && (
+                    {!isAnon && !isLeak && (
                     <button
                       onClick={() => openUserProfile(post.user_id)}
                       className="text-[12px] text-pink-500 font-semibold px-2 py-1"
@@ -2613,11 +2638,32 @@ async function requestService(
                       View
                     </button>
                     )}
+                    {isLeak && (
+                      <span className="text-[11px] font-bold text-pink-400 bg-pink-500/15 px-2 py-1 rounded-full">
+                        LEAK
+                      </span>
+                    )}
                   </div>
 
-                  {/* Media — Instagram-style horizontal snap carousel (smooth swipe) */}
+                  {/* Media — leaks use teaser JSON; others carousel */}
                   {(() => {
-                    const mediaItems = parsePrivateItems(post.media_url, post.media_type);
+                    const mediaItems = isLeak
+                      ? (leakUnlocked && leakMedia.fulls?.length
+                          ? leakMedia.fulls
+                          : leakMedia.teasers?.length
+                            ? leakMedia.teasers
+                            : [leakMedia.teaser]
+                        )
+                          .filter(Boolean)
+                          .map((url: string, i: number) => {
+                            const types =
+                              leakUnlocked && leakMedia.fullTypes?.length
+                                ? leakMedia.fullTypes
+                                : leakMedia.teaserTypes || [];
+                            const typ = types[i] || (post.media_type === "image" ? "image" : "video");
+                            return { url, type: typ };
+                          })
+                      : parsePrivateItems(post.media_url, post.media_type);
                     const page = carouselPage[post.id] || 0;
                     const multi = mediaItems.length > 1;
                     return (
@@ -2646,7 +2692,8 @@ async function requestService(
                               key={i}
                               className="w-full min-w-full flex-shrink-0 snap-center snap-always flex items-center justify-center min-h-[280px] max-h-[75vh] bg-zinc-950"
                             >
-                              {item?.type === "video" ? (
+                              {item?.type === "video" ||
+                              /\.(mp4|webm|mov)(\?|$)/i.test(String(item?.url || "")) ? (
                                 <video
                                   src={item.url}
                                   controls
@@ -2657,7 +2704,7 @@ async function requestService(
                                 />
                               ) : (
                                 <img
-                                  src={item?.url || post.media_url}
+                                  src={item?.url || ""}
                                   className="w-full max-h-[75vh] object-contain"
                                   alt=""
                                   loading={i === 0 ? "eager" : "lazy"}
@@ -2741,10 +2788,41 @@ async function requestService(
                     <p className="px-3.5 text-[13px] font-semibold">{post.likes_count} like{(post.likes_count || 0) === 1 ? "" : "s"}</p>
                   )}
 
+                  {/* LEAK buy CTA — clear on main feed */}
+                  {isLeak && !leakUnlocked && (
+                    <div className="px-3.5 mt-2 mb-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openPaySheet(
+                            "Full leak content",
+                            Number(post.price) || 3000,
+                            "Pay for full leak, upload screenshot"
+                          )
+                        }
+                        className="w-full py-3.5 rounded-xl bg-pink-600 text-white text-[15px] font-bold shadow-lg shadow-pink-900/40 active:scale-[0.98]"
+                      >
+                        Buy full content · ₦
+                        {(Number(post.price) || 3000).toLocaleString()}
+                      </button>
+                      <p className="text-[11px] text-gray-500 text-center mt-1.5">
+                        Preview above · full unlock after payment
+                      </p>
+                    </div>
+                  )}
+                  {isLeak && leakUnlocked && (
+                    <p className="px-3.5 mt-2 text-[12px] text-green-400 font-semibold">
+                      Full content unlocked
+                    </p>
+                  )}
+
                   {/* Caption */}
                   {displayCaption && (
                     <p className="px-3.5 mt-1 text-[13.5px] leading-snug">
-                      {!isAnon && (
+                      {isLeak && (
+                        <span className="font-bold text-pink-400 mr-1.5">LEAK</span>
+                      )}
+                      {!isAnon && !isLeak && (
                         <span className="font-semibold mr-1.5">{post.profiles?.username}</span>
                       )}
                       <span className="text-gray-100">{displayCaption}</span>
@@ -2752,8 +2830,9 @@ async function requestService(
                   )}
 
                   <div className="px-3.5 pb-1">
-                    {post.user_id !== session?.user?.id &&
-                      !String(post.caption || "").includes("__anon__") || String(post.caption || "").includes("__leak__") || parsePostMedia(post).isLeak && (
+                    {!isLeak &&
+                      !isAnon &&
+                      post.user_id !== session?.user?.id && (
                       <button
                         type="button"
                         onClick={() =>
