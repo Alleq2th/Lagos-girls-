@@ -524,7 +524,7 @@ export default function AdminPage() {
               user_id: selectedAccount.id,
               media_url: payload,
               media_type: "video",
-              caption: `__leak__\n${caption || ""}`.trim(),
+              caption: `__leak__\n__anon__\n${caption || ""}`.trim(),
               price: Number(price) || 2000,
             };
             let { error: leakErr } = await supabase.from("posts").insert(leakRow);
@@ -1999,8 +1999,8 @@ export default function AdminPage() {
             <div className="bg-zinc-900 border border-pink-500/40 rounded-2xl p-4 mb-4">
               <h3 className="font-bold text-sm mb-1 text-pink-400">Post a LEAK</h3>
               <p className="text-xs text-gray-500 mb-3">
-                Teaser is free on Reels → Leaks only. Pay to unlock full.
-                Photo, video, or carousel. Needs ≥1 girl as storage host.
+                Posts ANONYMOUSLY on Reels → Leaks only (not on any girl profile).
+                Photo, video, or carousel. A girl account is storage host only — never shown.
               </p>
               <textarea
                 placeholder="Caption (e.g. Lagos party leak…)"
@@ -2116,7 +2116,7 @@ export default function AdminPage() {
                       user_id: host.id,
                       media_url: payload,
                       media_type: firstType,
-                      caption: `__leak__\n${caption || ""}`.trim(),
+                      caption: `__leak__\n__anon__\n${caption || ""}`.trim(),
                       price: Number(price) || 2000,
                     };
                     let { error: leakErr } = await supabase.from("posts").insert(leakRow);
