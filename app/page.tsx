@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import { smartFeedSort, shuffleArray, orderFullFeed } from "../lib/algorithm";
+import { smartFeedSort, shuffleArray, orderFullFeed, mixLeaksIntoFeed } from "../lib/algorithm";
 import {
   getPersonality,
   getPersonalityTraits,
@@ -140,9 +140,13 @@ function feedUserKey(session: any) {
 }
 
 function orderPostsFor(posts: any[], feedType: "home" | "reels", session: any, followingIds: string[]) {
-  return orderFullFeed(posts, feedType, feedUserKey(session), {
+  const ordered = orderFullFeed(posts, feedType, feedUserKey(session), {
     followingIds: followingIds || [],
   });
+  // Home feed: ~3 normal posts, then 1 leak (leaks don't dominate)
+  if (feedType === "home") return mixLeaksIntoFeed(ordered, 3);
+  // Reels leaks tab is filtered separately; girls tab has no leaks
+  return ordered;
 }
 
 function isLeakPost(post: any) {
